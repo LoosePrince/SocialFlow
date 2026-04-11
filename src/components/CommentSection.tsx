@@ -4,15 +4,22 @@ import { GithubCdnAvatar } from './GithubCdnAvatar';
 import LikeList from './LikeList';
 import { useNavigate } from 'react-router-dom';
 import { Send, MessageSquare, MessageCircle, Trash2, Heart } from 'lucide-react';
-import { supabase } from '../supabase';
 import { useAuth } from '../context/AuthContext';
 import { useUsers } from '../hooks/useUsers';
 import { getGithubUrl } from '../github';
 import { toggleLike } from '../utils';
 import CommentText from './CommentText';
 import dayjs from 'dayjs';
+import { apiJson } from '../lib/api';
+import { subscribeAppEvents } from '../lib/appSse';
+import { toMillis } from '../lib/time';
 
 const { Text } = Typography;
+
+function relativeFromNow(v: unknown) {
+  const ms = toMillis(v);
+  return ms != null ? dayjs(ms).fromNow() : '—';
+}
 
 interface CommentSectionProps {
   contentId: string;
@@ -35,42 +42,37 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
   const navigate = useNavigate();
 
   const fetchLikeMeta = useCallback(async () => {
-    const table = contentType === 'post' ? 'posts' : 'projects';
-    const { data: row } = await supabase.from(table).select('likecount').eq('id', contentId).maybeSingle();
-    if (row) setLikeCount(row.likecount ?? 0);
-    if (user) {
-      const { data: like } = await supabase
-        .from('likes')
-        .select('id')
-        .eq('userid', user.id)
-        .eq('contentid', contentId)
-        .eq('contenttype', contentType)
-        .maybeSingle();
-      setLiked(!!like);
-    } else {
+    const path =
+      contentType === 'post' ? `/api/posts/${contentId}` : `/api/projects/${contentId}`;
+    try {
+      const row = await apiJson<{ likecount?: number }>(path);
+      setLikeCount(row.likecount ?? 0);
+    } catch {
+      setLikeCount(0);
+    }
+    try {
+      const status = await apiJson<{ liked: boolean }>(
+        `/api/likes/status?contentId=${encodeURIComponent(contentId)}`
+      );
+      setLiked(!!status.liked);
+    } catch {
       setLiked(false);
     }
-  }, [contentId, contentType, user?.id]);
+  }, [contentId, contentType]);
 
   useEffect(() => {
-    fetchLikeMeta();
+    void fetchLikeMeta();
   }, [fetchLikeMeta]);
 
   useEffect(() => {
-    const channel = supabase
-      .channel(`comment-section-likes-${contentId}-${Date.now()}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'likes', filter: `contentid=eq.${contentId}` },
-        () => {
-          fetchLikeMeta();
-        }
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [contentId, fetchLikeMeta]);
+    const unsub = subscribeAppEvents((data) => {
+      const t = data.table as string | undefined;
+      if (t === 'likes') {
+        void fetchLikeMeta();
+      }
+    });
+    return () => unsub();
+  }, [fetchLikeMeta]);
 
   const handleLike = async () => {
     if (!user) {
@@ -78,7 +80,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
       return;
     }
     try {
-      await toggleLike(user.id, contentId, contentType);
+      await toggleLike(contentId, contentType);
       await fetchLikeMeta();
       setLikeListNonce((n) => n + 1);
     } catch {
@@ -87,42 +89,43 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
   };
 
   const fetchComments = async () => {
-    const { data, error } = await supabase
-      .from('comments')
-      .select(`
-        *,
-        profiles:authorid (displayname, photourl)
-      `)
-      .eq('contentid', contentId)
-      .eq('contenttype', contentType)
-      .order('createdat', { ascending: false });
-
-    if (!error && data) {
-      setComments(data.map(c => ({
-        ...c,
-        authorName: c.profiles?.displayname,
-        authorPhoto: c.profiles?.photourl ? (c.profiles.photourl.startsWith('http') ? c.profiles.photourl : getGithubUrl(c.profiles.photourl)) : ''
-      })));
+    try {
+      const data = await apiJson<
+        Array<{
+          id: string;
+          authorid: string;
+          text: string;
+          createdat: number;
+          parentid?: string | null;
+          profiles?: { displayname?: string; photourl?: string };
+        }>
+      >(
+        `/api/comments?contentId=${encodeURIComponent(contentId)}&contentType=${encodeURIComponent(contentType)}`
+      );
+      setComments(
+        data.map((c) => ({
+          ...c,
+          authorName: c.profiles?.displayname,
+          authorPhoto: c.profiles?.photourl
+            ? c.profiles.photourl.startsWith('http')
+              ? c.profiles.photourl
+              : getGithubUrl(c.profiles.photourl)
+            : '',
+        }))
+      );
+    } catch {
+      setComments([]);
     }
   };
 
   useEffect(() => {
-    fetchComments();
-    const channel = supabase
-      .channel(`comments-changes-${contentId}-${Date.now()}`)
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'comments', 
-        filter: `contentid=eq.${contentId}` 
-      }, () => {
-        fetchComments();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    void fetchComments();
+    const unsub = subscribeAppEvents((data) => {
+      if (data.table === 'comments') {
+        void fetchComments();
+      }
+    });
+    return () => unsub();
   }, [contentId, contentType]);
 
   const handleSubmit = async () => {
@@ -134,43 +137,24 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
 
     setSubmitting(true);
     try {
-      const mentionIds = users.filter(u => text.includes(`@${u.displayname}`)).map(u => u.uid);
-      
-      const { error } = await supabase.from('comments').insert([{
-        contentid: contentId,
-        contenttype: contentType,
-        authorid: user.id,
-        text: text.trim(),
-        createdat: Date.now(),
-        parentid: replyTo ? replyTo.id : null,
-        replytoname: replyTo ? replyTo.authorName : null,
-        mentionids: mentionIds,
-      }]);
+      const mentionIds = users.filter((u) => text.includes(`@${u.displayname}`)).map((u) => u.uid);
 
-      if (error) throw error;
-
-      // Update count
-      try {
-        const tableName = contentType === 'post' ? 'posts' : 'projects';
-        const { error: rpcError } = await supabase.rpc('increment_comment_count', { 
-          row_id: contentId, 
-          table_name: tableName 
-        });
-        if (rpcError) throw rpcError;
-      } catch (err) {
-        // Fallback: Manual increment if RPC fails
-        const table = contentType === 'post' ? 'posts' : 'projects';
-        const { data } = await supabase.from(table).select('commentcount').eq('id', contentId).single();
-        if (data) {
-          await supabase.from(table).update({ 
-            commentcount: (data.commentcount || 0) + 1 
-          }).eq('id', contentId);
-        }
-      }
+      await apiJson('/api/comments', {
+        method: 'POST',
+        body: JSON.stringify({
+          contentid: contentId,
+          contenttype: contentType,
+          text: text.trim(),
+          parentid: replyTo ? replyTo.id : null,
+          replytoname: replyTo ? replyTo.authorName : null,
+          mentionids: mentionIds,
+        }),
+      });
 
       setText('');
       setReplyTo(null);
       message.success('评论成功');
+      await fetchComments();
     } catch (err: any) {
       message.error(`评论失败: ${err.message}`);
     } finally {
@@ -185,29 +169,19 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
       okType: 'danger',
       cancelText: '取消',
       onOk: async () => {
-        const { error } = await supabase.from('comments').delete().eq('id', commentId);
-        if (error) {
-          message.error('删除失败');
-        } else {
+        try {
+          await apiJson(`/api/comments/${commentId}`, { method: 'DELETE' });
           message.success('评论已删除');
-          // Manual decrement of the content's comment count
-          try {
-            const table = contentType === 'post' ? 'posts' : 'projects';
-            const { data } = await supabase.from(table).select('commentcount').eq('id', contentId).single();
-            if (data) {
-              await supabase.from(table).update({ 
-                commentcount: Math.max(0, (data.commentcount || 0) - 1) 
-              }).eq('id', contentId);
-            }
-          } catch (e) {}
+          await fetchComments();
+        } catch {
+          message.error('删除失败');
         }
-      }
+      },
     });
   };
 
   return (
     <div style={{ background: token.colorBgContainer, borderRadius: token.borderRadiusLG, padding: 20 }}>
-      {/* 点赞（动态 / 项目详情评论区上方） */}
       <div
         style={{
           marginBottom: 20,
@@ -243,13 +217,11 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
         <LikeList contentId={contentId} contentType={contentType} alwaysShow refreshNonce={likeListNonce} />
       </div>
 
-      {/* Header */}
       <Flex align="center" gap={8} style={{ marginBottom: 20 }}>
         <MessageCircle size={18} />
         <Text strong style={{ fontSize: 16 }}>评论 · {comments.length}</Text>
       </Flex>
 
-      {/* Input row */}
       <Flex gap={12} style={{ marginBottom: 24 }}>
         <GithubCdnAvatar src={profile?.photourl} size={40} style={{ flexShrink: 0 }} />
         <Flex vertical style={{ flex: 1 }}>
@@ -260,7 +232,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
               borderRadius: 8, 
               marginBottom: 8 
             }}>
-              <Text size="small">回复 <Text strong>@{replyTo.authorName}</Text></Text>
+              <Text style={{ fontSize: 12 }}>回复 <Text strong>@{replyTo.authorName}</Text></Text>
               <Button type="link" size="small" onClick={() => setReplyTo(null)}>取消</Button>
             </Flex>
           )}
@@ -304,7 +276,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
               title={
                 <Flex align="center" gap={12}>
                   <Text strong onClick={() => navigate(`/profile/${item.authorid}`)} style={{ cursor: 'pointer' }}>{item.authorName}</Text>
-                  <Text type="secondary" style={{ fontSize: 12 }}>{dayjs(item.createdat).fromNow()}</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{relativeFromNow(item.createdat)}</Text>
                 </Flex>
               }
               description={
@@ -336,7 +308,6 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
                     )}
                   </Flex>
                   
-                  {/* 子回复 */}
                   <div style={{ 
                     marginTop: 12, 
                     borderLeft: `2px solid ${token.colorBorderSecondary}`, 
@@ -348,7 +319,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
                         <Flex vertical style={{ flex: 1 }}>
                           <header style={{ fontSize: 13, marginBottom: 4 }}>
                             <Text strong style={{ marginRight: 8, cursor: 'pointer' }} onClick={() => navigate(`/profile/${reply.authorid}`)}>{reply.authorName}</Text>
-                            <Text type="secondary" style={{ fontSize: 11 }}>{dayjs(reply.createdat).fromNow()}</Text>
+                            <Text type="secondary" style={{ fontSize: 11 }}>{relativeFromNow(reply.createdat)}</Text>
                           </header>
                           <div style={{ fontSize: 14, lineHeight: 1.5 }}>
                             <CommentText text={reply.text} />

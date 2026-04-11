@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Modal, Tabs, Form, Input, Upload, Button, Space, App } from 'antd';
-import { ImagePlus, Type, FileText, Send, Projector, Info } from 'lucide-react';
-import { supabase } from '../supabase';
+import { ImagePlus, Type, FileText, Send, Projector } from 'lucide-react';
 import { uploadToGithub } from '../github';
 import { useAuth } from '../context/AuthContext';
+import { apiJson } from '../lib/api';
 
 interface CreateModalProps {
   visible: boolean;
@@ -26,18 +26,15 @@ const CreateModal: React.FC<CreateModalProps> = ({ visible, onCancel }) => {
         fileList.map((file) => uploadToGithub(file.originFileObj))
       );
 
-      const { error } = await supabase.from('posts').insert([{
-        authorid: user.id,
-        createdat: Date.now(),
-        likecount: 0,
-        commentcount: 0,
-        isrecommended: !!isAdmin,
-        content: values.content,
-        images: filePaths,
-        type: 'post'
-      }]);
+      await apiJson('/api/posts', {
+        method: 'POST',
+        body: JSON.stringify({
+          content: values.content,
+          images: filePaths,
+          isrecommended: !!isAdmin,
+        }),
+      });
 
-      if (error) throw error;
       message.success('动态发布成功');
       postForm.resetFields();
       setFileList([]);
@@ -57,21 +54,18 @@ const CreateModal: React.FC<CreateModalProps> = ({ visible, onCancel }) => {
         fileList.map((file) => uploadToGithub(file.originFileObj))
       );
 
-      const { error } = await supabase.from('projects').insert([{
-        authorid: user.id,
-        createdat: Date.now(),
-        likecount: 0,
-        commentcount: 0,
-        isrecommended: !!isAdmin,
-        title: values.title,
-        summary: values.summary,
-        content: values.projectContent,
-        coverurl: filePaths[0] || '',
-        attachments: filePaths.slice(1),
-        type: 'project'
-      }]);
+      await apiJson('/api/projects', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: values.title,
+          summary: values.summary,
+          content: values.projectContent,
+          coverurl: filePaths[0] || '',
+          attachments: filePaths.slice(1),
+          isrecommended: !!isAdmin,
+        }),
+      });
 
-      if (error) throw error;
       message.success('项目创建成功');
       projectForm.resetFields();
       setFileList([]);

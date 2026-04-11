@@ -5,7 +5,8 @@ import { GithubCdnImg } from './GithubCdnImg';
 import { Rocket, Clock, MessageSquare, MoreHorizontal, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../supabase';
+import { apiJson } from '../lib/api';
+import { toMillis } from '../lib/time';
 import dayjs from 'dayjs';
 
 const { Text } = Typography;
@@ -22,20 +23,18 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
 
   const isOwner = user?.id === project.authorid;
   const canManage = isAdmin || isOwner;
+  const createdAtMs = toMillis(project.createdat);
 
   const toggleRecommendation = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    const { error, data } = await supabase
-      .from('projects')
-      .update({ isrecommended: !project.isrecommended })
-      .eq('id', project.id)
-      .select()
-      .single();
-
-    if (error) {
-      message.error('操作失败');
-    } else {
+    try {
+      const data = await apiJson<{ isrecommended?: boolean }>(`/api/projects/${project.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isrecommended: !project.isrecommended }),
+      });
       message.success(data.isrecommended ? '已推荐项目' : '已取消推荐');
+    } catch {
+      message.error('操作失败');
     }
   };
 
@@ -48,9 +47,12 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
       okType: 'danger',
       cancelText: '取消',
       onOk: async () => {
-        const { error } = await supabase.from('projects').delete().eq('id', project.id);
-        if (error) message.error('删除失败');
-        else message.success('已删除');
+        try {
+          await apiJson(`/api/projects/${project.id}`, { method: 'DELETE' });
+          message.success('已删除');
+        } catch {
+          message.error('删除失败');
+        }
       }
     });
   };
@@ -92,7 +94,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
       actions={[
         <Flex justify="center" align="center" gap={4} onClick={() => navigate(`/project/${project.id}`)} style={{ cursor: 'pointer' }}>
           <Clock size={14} />
-          <Text type="secondary" style={{ fontSize: 12 }}>{dayjs(project.createdat).fromNow()}</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{createdAtMs != null ? dayjs(createdAtMs).fromNow() : '—'}</Text>
         </Flex>,
         <Flex justify="center" align="center" gap={4} onClick={() => navigate(`/project/${project.id}`)} style={{ cursor: 'pointer' }}>
           <MessageSquare size={14} />
@@ -126,7 +128,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
         avatar={
           <GithubCdnAvatar
             src={project.authorPhoto}
-            onClick={(e) => { e.stopPropagation(); navigate(`/profile/${project.authorid}`); }}
+            onClick={(e) => { e?.stopPropagation(); navigate(`/profile/${project.authorid}`); }}
             style={{ cursor: 'pointer' }}
           />
         }

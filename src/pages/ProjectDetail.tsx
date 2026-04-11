@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { supabase } from '../supabase';
+import { apiJson } from '../lib/api';
 import { Typography, Button, Tag, Divider, Flex, theme, Card, Grid } from 'antd';
 import { ProjectDetailPageSkeleton } from '../components/PageSkeletons';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
@@ -11,6 +11,7 @@ import { ArrowLeft, Clock, ExternalLink } from 'lucide-react';
 import { getGithubUrl } from '../github';
 import CommentSection from '../components/CommentSection';
 import dayjs from 'dayjs';
+import { toMillis } from '../lib/time';
 import { motion } from 'framer-motion';
 import type { Components } from 'react-markdown';
 
@@ -154,28 +155,31 @@ const ProjectDetail: React.FC = () => {
 
   useEffect(() => {
     const fetchProject = async () => {
-      const { data, error } = await supabase
-        .from('projects')
-        .select(`*, profiles:authorid (displayname, photourl)`)
-        .eq('id', id)
-        .maybeSingle();
-
-      if (error || !data) {
-        setProject(null);
-      } else {
+      if (!id) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const data = await apiJson<{
+          profiles?: { displayname?: string; photourl?: string };
+          coverurl?: string;
+          attachments?: string[];
+        }>(`/api/projects/${id}`);
         const authorPhoto = data.profiles?.photourl || '';
         setProject({
           ...data,
           authorName: data.profiles?.displayname,
           authorPhoto: authorPhoto.startsWith('http') ? authorPhoto : getGithubUrl(authorPhoto),
           coverUrl: data.coverurl ? getGithubUrl(data.coverurl) : '',
-          attachments: (data.attachments as string[] || []).map(getGithubUrl)
+          attachments: (data.attachments as string[] || []).map(getGithubUrl),
         });
+      } catch {
+        setProject(null);
       }
       setLoading(false);
     };
 
-    fetchProject();
+    void fetchProject();
   }, [id]);
 
   if (loading) {
@@ -186,6 +190,8 @@ const ProjectDetail: React.FC = () => {
     );
   }
   if (!project) return <div style={{ padding: '20px', textAlign: 'center' }}>项目不存在</div>;
+
+  const projectTimeMs = toMillis(project.createdat);
 
   return (
     <motion.div 
@@ -245,7 +251,7 @@ const ProjectDetail: React.FC = () => {
               <Flex align="center" gap={4}>
                 <Clock size={12} style={{ color: token.colorTextDescription }} />
                 <Text type="secondary" style={{ fontSize: 12 }}>
-                  {dayjs(project.createdat).format('YYYY-MM-DD HH:mm')}
+                  {projectTimeMs != null ? dayjs(projectTimeMs).format('YYYY-MM-DD HH:mm') : '—'}
                 </Text>
               </Flex>
             </Flex>

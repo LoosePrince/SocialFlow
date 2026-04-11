@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../supabase';
+import { apiJson } from '../lib/api';
 
 export const useUsers = () => {
   const [users, setUsers] = useState<any[]>([]);
@@ -7,21 +7,23 @@ export const useUsers = () => {
 
   useEffect(() => {
     const fetchUsers = async () => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, displayname, photourl');
-
-      if (!error && data) {
-        setUsers(data.map(u => ({
-          uid: u.id,
-          displayname: u.displayname,
-          photourl: u.photourl
-        })));
+      try {
+        const data = await apiJson<Array<{ uid: string; displayname: string; photourl: string }>>(
+          '/api/users'
+        );
+        setUsers(
+          data.map((u) => ({
+            uid: u.uid,
+            displayname: u.displayname,
+            photourl: u.photourl,
+          }))
+        );
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
-    fetchUsers();
+    void fetchUsers();
   }, []);
 
   return { users, loading };

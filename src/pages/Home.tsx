@@ -21,7 +21,7 @@ const Home: React.FC = () => {
       return;
     }
     try {
-      await toggleLike(user.id, id, type);
+      await toggleLike(id, type);
     } catch (e) {
       message.error('操作失败');
     }

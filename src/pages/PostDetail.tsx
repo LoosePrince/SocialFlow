@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../supabase';
+import { apiJson } from '../lib/api';
 import { Typography, Button, App, Card, theme, Flex } from 'antd';
 import { PostDetailPageSkeleton } from '../components/PageSkeletons';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
@@ -9,6 +9,7 @@ import { ArrowLeft, Clock } from 'lucide-react';
 import { getGithubUrl } from '../github';
 import CommentSection from '../components/CommentSection';
 import dayjs from 'dayjs';
+import { toMillis } from '../lib/time';
 import { motion } from 'framer-motion';
 
 const { Title, Text, Paragraph } = Typography;
@@ -22,27 +23,29 @@ const PostDetail: React.FC = () => {
 
   useEffect(() => {
     const fetchPost = async () => {
-      const { data, error } = await supabase
-        .from('posts')
-        .select(`*, profiles:authorid (displayname, photourl)`)
-        .eq('id', id)
-        .maybeSingle();
-
-      if (error || !data) {
-        setPost(null);
-      } else {
+      if (!id) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const data = await apiJson<{
+          profiles?: { displayname?: string; photourl?: string };
+          images?: string[];
+        }>(`/api/posts/${id}`);
         const authorPhoto = data.profiles?.photourl || '';
         setPost({
           ...data,
           authorName: data.profiles?.displayname,
           authorPhoto: authorPhoto.startsWith('http') ? authorPhoto : getGithubUrl(authorPhoto),
-          images: (data.images as string[] || []).map(getGithubUrl)
+          images: (data.images as string[] || []).map(getGithubUrl),
         });
+      } catch {
+        setPost(null);
       }
       setLoading(false);
     };
 
-    fetchPost();
+    void fetchPost();
   }, [id]);
 
   if (loading) {
@@ -53,6 +56,8 @@ const PostDetail: React.FC = () => {
     );
   }
   if (!post) return <div style={{ padding: 24, textAlign: 'center' }}><Text type="secondary">动态不存在</Text></div>;
+
+  const postTimeMs = toMillis(post.createdat ?? post.createdAt);
 
   return (
     <motion.div 
@@ -96,7 +101,7 @@ const PostDetail: React.FC = () => {
             <Flex align="center" gap={4} style={{ marginTop: 4 }}>
               <Clock size={12} style={{ color: token.colorTextDescription }} />
               <Text type="secondary" style={{ fontSize: 12 }}>
-                {dayjs(post.createdat || post.createdAt).format('YYYY-MM-DD HH:mm')}
+                {postTimeMs != null ? dayjs(postTimeMs).format('YYYY-MM-DD HH:mm') : '—'}
               </Text>
             </Flex>
           </Flex>

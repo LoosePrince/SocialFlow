@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { supabase } from '../supabase';
 import { useAuth } from './AuthContext';
+import { apiJson } from '../lib/api';
+import { subscribeAppEvents } from '../lib/appSse';
 
 interface NotificationContextType {
   notifications: any[];
@@ -19,21 +20,16 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const fetchNotifications = async () => {
     if (!user) return;
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('touserid', user.id)
-      .order('createdat', { ascending: false });
-
-    if (!error && data) {
+    try {
+      const data = await apiJson<any[]>('/api/notifications');
       setNotifications(data);
-      setUnreadCount(data.filter((n: any) => !n.isread).length);
+      setUnreadCount(data.filter((n: any) => !n.isRead).length);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
-    // 只有登录后才开启订阅
     if (!user) {
       setNotifications([]);
       setUnreadCount(0);
@@ -41,23 +37,16 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       return;
     }
 
-    fetchNotifications();
+    void fetchNotifications();
 
-    // 全局唯一的订阅通道
-    const channel = supabase
-      .channel(`global-notifications-${user.id}`)
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'notifications', filter: `touserid=eq.${user.id}` }, 
-        () => {
-          fetchNotifications();
-        }
-      )
-      .subscribe();
+    const unsub = subscribeAppEvents((data) => {
+      if (data.table === 'notifications') {
+        void fetchNotifications();
+      }
+    });
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user?.id]); // 仅在用户 ID 变化时重连
+    return () => unsub();
+  }, [user?.id]);
 
   return (
     <NotificationContext.Provider value={{ notifications, unreadCount, loading, refresh: fetchNotifications }}>

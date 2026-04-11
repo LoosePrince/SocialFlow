@@ -1,18 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Avatar, Tooltip, Flex, Typography, theme } from 'antd';
 import { GithubCdnAvatar } from './GithubCdnAvatar';
-import { supabase } from '../supabase';
 import { getGithubUrl } from '../github';
+import { apiJson } from '../lib/api';
+import { subscribeAppEvents } from '../lib/appSse';
 
 const { Text } = Typography;
 
 interface LikeListProps {
   contentId: string;
-  /** 与点赞记录一致，避免 id 碰撞时混查 */
   contentType?: 'post' | 'project';
-  /** 详情评论区等：无赞也保留一行展示「0 人觉得很赞」 */
   alwaysShow?: boolean;
-  /** 变化时重新拉取列表（不依赖 Realtime；点赞成功后由父组件递增） */
   refreshNonce?: number;
 }
 
@@ -22,42 +20,41 @@ const LikeList: React.FC<LikeListProps> = ({ contentId, contentType, alwaysShow,
 
   useEffect(() => {
     const fetchLikes = async () => {
-      let q = supabase
-        .from('likes')
-        .select('*, profiles:userid (displayname, photourl)')
-        .eq('contentid', contentId);
-      if (contentType) {
-        q = q.eq('contenttype', contentType);
-      }
-      const { data, error } = await q;
-
-      if (!error && data) {
-        setLikes(data.map(l => ({
-          ...l,
-          userName: l.profiles?.displayname,
-          userPhoto: l.profiles?.photourl ? (l.profiles.photourl.startsWith('http') ? l.profiles.photourl : getGithubUrl(l.profiles.photourl)) : ''
-        })));
+      const q =
+        contentType === 'post' || contentType === 'project'
+          ? `?contentId=${encodeURIComponent(contentId)}&contentType=${encodeURIComponent(contentType)}`
+          : `?contentId=${encodeURIComponent(contentId)}`;
+      try {
+        const data = await apiJson<
+          Array<{
+            id: string;
+            profiles?: { displayname?: string; photourl?: string };
+          }>
+        >(`/api/likes${q}`);
+        setLikes(
+          data.map((l) => ({
+            ...l,
+            userName: l.profiles?.displayname,
+            userPhoto: l.profiles?.photourl
+              ? l.profiles.photourl.startsWith('http')
+                ? l.profiles.photourl
+                : getGithubUrl(l.profiles.photourl)
+              : '',
+          }))
+        );
+      } catch {
+        setLikes([]);
       }
     };
 
-    fetchLikes();
+    void fetchLikes();
 
-    // Real-time subscription for likes
-    const channel = supabase
-      .channel(`likes-realtime-${contentId}-${Date.now()}`)
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'likes', 
-        filter: `contentid=eq.${contentId}` 
-      }, () => {
-        fetchLikes();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    const unsub = subscribeAppEvents((data) => {
+      if (data.table === 'likes') {
+        void fetchLikes();
+      }
+    });
+    return () => unsub();
   }, [contentId, contentType, refreshNonce]);
 
   if (likes.length === 0 && !alwaysShow) return null;

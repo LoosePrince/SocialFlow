@@ -1,40 +1,45 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { List, Avatar, Typography, Badge, Button, Empty, Space } from 'antd';
 import { NotificationsPageSkeleton } from '../components/PageSkeletons';
 import { AtSign, MessageCircle, Heart, CheckCircle2 } from 'lucide-react';
 import { useNotificationCenter } from '../context/NotificationContext';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../supabase';
 import { useAuth } from '../context/AuthContext';
 import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
+import 'dayjs/locale/zh-cn';
 import { motion } from 'framer-motion';
+
+dayjs.extend(relativeTime);
+dayjs.locale('zh-cn');
+import { apiJson } from '../lib/api';
+import { toMillis } from '../lib/time';
 
 const { Title, Text } = Typography;
 
 const Notifications: React.FC = () => {
-  const { notifications, loading } = useNotificationCenter();
+  const { notifications, loading, refresh } = useNotificationCenter();
   const { user } = useAuth();
   const navigate = useNavigate();
 
   const markAllAsRead = async () => {
     if (!user) return;
-    const { error } = await supabase
-      .from('notifications')
-      .update({ isRead: true })
-      .eq('toUserId', user.id)
-      .eq('isRead', false);
-    
-    if (error) {
-      console.error('Failed to mark all as read', error);
+    try {
+      await apiJson('/api/notifications/read-all', { method: 'PATCH' });
+      await refresh();
+    } catch {
+      console.error('Failed to mark all as read');
     }
   };
 
   const handleNotificationClick = async (notif: any) => {
     if (!notif.isRead) {
-      await supabase
-        .from('notifications')
-        .update({ isRead: true })
-        .eq('id', notif.id);
+      try {
+        await apiJson(`/api/notifications/${notif.id}/read`, { method: 'PATCH' });
+        await refresh();
+      } catch {
+        /* ignore */
+      }
     }
     const path = notif.contentType === 'post' ? `/post/${notif.contentId}` : `/project/${notif.contentId}`;
     navigate(path);
@@ -68,7 +73,9 @@ const Notifications: React.FC = () => {
           className="card"
           itemLayout="horizontal"
           dataSource={notifications}
-          renderItem={(item) => (
+          renderItem={(item) => {
+            const notifTimeMs = toMillis(item.createdAt ?? item.createdat);
+            return (
             <List.Item 
               onClick={() => handleNotificationClick(item)}
               style={{ 
@@ -94,7 +101,9 @@ const Notifications: React.FC = () => {
                   <Space>
                     <Text strong>{item.fromUserName}</Text>
                     <Text type="secondary">在评论中艾特了你</Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{dayjs(item.createdAt).fromNow()}</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {notifTimeMs != null ? dayjs(notifTimeMs).fromNow() : '—'}
+                    </Text>
                   </Space>
                 }
                 description={
@@ -104,7 +113,8 @@ const Notifications: React.FC = () => {
                 }
               />
             </List.Item>
-          )}
+            );
+          }}
         />
       )}
     </motion.div>

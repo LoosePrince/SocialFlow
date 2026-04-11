@@ -1,17 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Typography, Card, Switch, List, Button, Input, Form, Divider, App, Upload } from 'antd';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
-import { User, Bell, Shield, Moon, Save, LogOut, Camera } from 'lucide-react';
+import { Moon, Save, LogOut, Camera } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { supabase } from '../supabase';
 import { uploadToGithub } from '../github';
+import { apiJson } from '../lib/api';
 
 const { Title, Text } = Typography;
 
 const Settings: React.FC = () => {
-  const { user, profile, logout } = useAuth();
+  const { user, profile, logout, refreshProfile } = useAuth();
   const { mode, toggleTheme } = useTheme();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
@@ -30,15 +30,14 @@ const Settings: React.FC = () => {
     if (!user) return;
     setLoading(true);
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
+      await apiJson('/api/profile', {
+        method: 'PATCH',
+        body: JSON.stringify({
           displayname: values.displayname,
           photourl: values.photourl,
-        })
-        .eq('id', user.id);
-      
-      if (error) throw error;
+        }),
+      });
+      await refreshProfile();
       message.success('个人资料已更新');
     } catch (error: any) {
       message.error(`更新失败: ${error.message}`);
@@ -58,7 +57,7 @@ const Settings: React.FC = () => {
     } finally {
       setLoading(false);
     }
-    return false; // Prevent auto upload
+    return false;
   };
 
   return (

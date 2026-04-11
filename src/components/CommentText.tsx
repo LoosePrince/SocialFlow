@@ -9,16 +9,15 @@ interface CommentTextProps {
 
 const CommentText: React.FC<CommentTextProps> = ({ text }) => {
   const { users } = useUsers();
-  const { token } = theme.useToken();
-  
+  const { token: themeToken } = theme.useToken();
+
   const tokens = text.split(/(@\S+)/);
 
   return (
     <span className="comment-text-content">
-      {tokens.map((token, index) => {
-        if (token.startsWith('@')) {
-          const name = token.substring(1);
-          // Fixed property name to displayname to match hook return
+      {tokens.map((part, index) => {
+        if (part.startsWith('@')) {
+          const name = part.substring(1);
           const mentionedUser = users.find(u => u.displayname === name);
           if (mentionedUser) {
             return (
@@ -26,19 +25,19 @@ const CommentText: React.FC<CommentTextProps> = ({ text }) => {
                 key={index} 
                 to={`/profile/${mentionedUser.uid}`}
                 style={{ 
-                  color: token.colorPrimary, 
+                  color: themeToken.colorPrimary, 
                   fontWeight: 500,
                   textDecoration: 'none'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.textDecoration = 'underline'}
-                onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}
+                onMouseEnter={(ev) => { ev.currentTarget.style.textDecoration = 'underline'; }}
+                onMouseLeave={(ev) => { ev.currentTarget.style.textDecoration = 'none'; }}
               >
-                {token}
+                {part}
               </Link>
             );
           }
         }
-        return <span key={index}>{token}</span>;
+        return <span key={index}>{part}</span>;
       })}
     </span>
   );

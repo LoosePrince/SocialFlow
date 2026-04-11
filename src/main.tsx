@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import SocialApp from './App.tsx'
+import SocialApp from './App'
 import './index.css'
 import { App } from 'antd'
 import { ThemeProvider } from './context/ThemeContext'

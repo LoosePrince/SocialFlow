@@ -1,52 +1,10 @@
-const GITHUB_TOKEN = import.meta.env.VITE_GITHUB_TOKEN;
+import { uploadMedia } from './lib/api';
+
 const GITHUB_USER = import.meta.env.VITE_GITHUB_USER;
 const GITHUB_REPO = import.meta.env.VITE_GITHUB_REPO;
-const GITHUB_UPLOAD_PATH = import.meta.env.VITE_GITHUB_UPLOAD_PATH; // SocialFlow/
-const GITHUB_EMAIL = import.meta.env.VITE_GITHUB_EMAIL;
+const GITHUB_UPLOAD_PATH = import.meta.env.VITE_GITHUB_UPLOAD_PATH;
 
-export const uploadToGithub = async (file: File): Promise<string> => {
-  const fileName = `${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
-  const filePath = `${GITHUB_UPLOAD_PATH}${fileName}`;
-  const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${filePath}`;
-
-  // Read file as base64
-  const base64Content = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      const base64 = result.split(',')[1];
-      resolve(base64);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-
-  const response = await fetch(url, {
-    method: 'PUT',
-    headers: {
-      Authorization: `token ${GITHUB_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      message: `upload image: ${fileName}`,
-      content: base64Content,
-      branch: 'main',
-      committer: {
-        name: GITHUB_USER,
-        email: GITHUB_EMAIL,
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || 'GitHub upload failed');
-  }
-
-  // Documentation: "数据库不直接储存链接而是储存相对SocialFlow路径的相对路径"
-  // So we return the fileName or the relative path from GITHUB_UPLOAD_PATH
-  return fileName;
-};
+export const uploadToGithub = uploadMedia;
 
 const DEFAULT_BRANCH = 'main';
 

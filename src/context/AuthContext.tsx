@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabase';
 import { User as SupabaseUser } from '@supabase/supabase-js';
+import { apiJson } from '../lib/api';
 
 interface UserProfile {
   id: string;
@@ -17,39 +18,59 @@ interface AuthContextType {
   loading: boolean;
   login: () => Promise<void>;
   logout: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
   isAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-function isPredefinedAdmin(email: string | null | undefined): boolean {
-  const configured = import.meta.env.VITE_ADMIN_EMAIL?.trim().toLowerCase();
-  if (!configured) return false;
-  const normalized = email?.trim().toLowerCase();
-  return !!normalized && normalized === configured;
-}
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  /** 合并 getSession 与 onAuthStateChange 触发的并发 /api/me，减轻 401 + refresh 风暴 */
+  const profileFetchRef = useRef<Promise<void> | null>(null);
+
+  const fetchProfile = async () => {
+    if (profileFetchRef.current) return profileFetchRef.current;
+    profileFetchRef.current = (async () => {
+      try {
+        const p = await apiJson<UserProfile>('/api/me');
+        setProfile(p);
+      } catch (err) {
+        console.error('Profile fetch error:', err);
+        setProfile(null);
+      } finally {
+        setLoading(false);
+        profileFetchRef.current = null;
+      }
+    })();
+    return profileFetchRef.current;
+  };
+
+  const refreshProfile = async () => {
+    try {
+      const p = await apiJson<UserProfile>('/api/me');
+      setProfile(p);
+    } catch {
+      /* ignore */
+    }
+  };
 
   useEffect(() => {
-    // Check active sessions
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
         setUser(session.user);
-        fetchProfile(session.user.id);
+        void fetchProfile();
       } else {
         setLoading(false);
       }
     });
 
-    // 监听认证状态变化
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
         setUser(session.user);
-        fetchProfile(session.user.id);
+        void fetchProfile();
       } else {
         setUser(null);
         setProfile(null);
@@ -62,55 +83,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  const fetchProfile = async (uid: string) => {
-    try {
-      // 先尝试读取
-      const { data: existing, error: fetchError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', uid)
-        .maybeSingle(); // 使用 maybeSingle 避免 406
-
-      if (existing) {
-        setProfile(existing);
-        setLoading(false);
-        return;
-      }
-
-      // 如果不存在，再尝试创建
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) return;
-
-      const metadata = userData.user.user_metadata;
-      const initialProfile = {
-        id: uid,
-        email: userData.user.email || '',
-        displayname: metadata.full_name || metadata.name || metadata.user_name || '新用户',
-        photourl: metadata.avatar_url || '',
-        role: isPredefinedAdmin(userData.user.email) ? 'admin' : 'user',
-        createdat: Date.now(),
-      };
-
-      const { data: created, error: insertError } = await supabase
-        .from('profiles')
-        .upsert([initialProfile], { onConflict: 'id' })
-        .select()
-        .maybeSingle();
-
-      if (created) setProfile(created);
-    } catch (err) {
-      console.error('Profile fetch error:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const login = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'github',
       options: {
-        redirectTo: window.location.origin
-      }
+        redirectTo: window.location.origin,
+      },
     });
   };
 
@@ -121,7 +99,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isAdmin = profile?.role === 'admin';
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, login, logout, isAdmin }}>
+    <AuthContext.Provider value={{ user, profile, loading, login, logout, refreshProfile, isAdmin }}>
       {children}
     </AuthContext.Provider>
   );

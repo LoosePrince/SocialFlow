@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Space, theme } from 'antd';
-import { supabase } from '../supabase';
+import { Typography, theme } from 'antd';
+import { apiJson } from '../lib/api';
 
 const { Text } = Typography;
 
@@ -14,20 +14,18 @@ const CommentPreview: React.FC<CommentPreviewProps> = ({ contentId }) => {
 
   useEffect(() => {
     const fetchLatest = async () => {
-      const { data, error } = await supabase
-        .from('comments')
-        .select('*, profiles:authorid (displayname)')
-        .eq('contentid', contentId)
-        .order('createdat', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (!error && data) {
+      try {
+        const data = await apiJson<{
+          profiles?: { displayname?: string };
+          text?: string;
+        } | null>(`/api/comments/latest?contentId=${encodeURIComponent(contentId)}`);
         setLatestComment(data);
+      } catch {
+        setLatestComment(null);
       }
     };
 
-    fetchLatest();
+    void fetchLatest();
   }, [contentId]);
 
   if (!latestComment) return null;

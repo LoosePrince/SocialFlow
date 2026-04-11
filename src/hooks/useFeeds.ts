@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../supabase';
+import { apiJson } from '../lib/api';
 import { getGithubUrl } from '../github';
+import { subscribeAppEvents } from '../lib/appSse';
 
 export const useFeeds = (showAll = false) => {
   const [feeds, setFeeds] = useState<any[]>([]);
@@ -8,45 +9,32 @@ export const useFeeds = (showAll = false) => {
 
   const fetchFeeds = async () => {
     try {
-      // 分别请求 posts 和 projects
-      const postQuery = supabase
-        .from('posts')
-        .select(`*, profiles:authorid (displayname, photourl)`)
-        .order('createdat', { ascending: false });
+      const params = showAll ? '?showAll=true' : '';
+      const allData = await apiJson<Record<string, unknown>[]>(`/api/feeds${params}`);
 
-      const projectQuery = supabase
-        .from('projects')
-        .select(`*, profiles:authorid (displayname, photourl)`)
-        .order('createdat', { ascending: false });
-
-      const [postsRes, projectsRes] = await Promise.all([postQuery, projectQuery]);
-
-      const allData = [
-        ...(postsRes.data || []).map(p => ({ ...p, type: 'post' })),
-        ...(projectsRes.data || []).map(p => ({ ...p, type: 'project' }))
-      ];
-
-      // 处理和合并
       const processed = allData
-        .filter(item => (showAll || item.isrecommended))
-        .map(item => {
-          const coverurl = item.coverurl ? getGithubUrl(item.coverurl) : '';
-          const images = item.images ? (item.images as string[]).map(getGithubUrl) : [];
-          const authorPhoto = item.profiles?.photourl || '';
-          
+        .map((item) => {
+          const coverurl = item.coverurl ? getGithubUrl(String(item.coverurl)) : '';
+          const images = item.images
+            ? (item.images as string[]).map(getGithubUrl)
+            : [];
+          const authorPhoto = (item.profiles as { photourl?: string } | undefined)?.photourl || '';
+
           return {
             ...item,
             coverurl,
             images,
-            authorName: item.profiles?.displayname,
+            authorName: (item.profiles as { displayname?: string } | undefined)?.displayname,
             authorPhoto: authorPhoto.startsWith('http') ? authorPhoto : getGithubUrl(authorPhoto),
-            createdAt: item.createdat, // Keeping camelCase for UI property names if needed, but DB field is createdat
+            createdAt: item.createdat,
             likeCount: item.likecount,
             commentCount: item.commentcount,
             isRecommended: item.isrecommended,
           };
         })
-        .sort((a, b) => b.createdat - a.createdat); // 重新按时间排序
+        .sort((a: Record<string, unknown>, b: Record<string, unknown>) =>
+          Number(b.createdat ?? b.createdAt) - Number(a.createdat ?? a.createdAt)
+        );
 
       setFeeds(processed);
     } catch (err) {
@@ -57,18 +45,14 @@ export const useFeeds = (showAll = false) => {
   };
 
   useEffect(() => {
-    fetchFeeds();
-
-    // 订阅两个表的变更
-    const channel = supabase
-      .channel(`feeds-realtime-${Date.now()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => fetchFeeds())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => fetchFeeds())
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    void fetchFeeds();
+    const unsub = subscribeAppEvents((data) => {
+      const t = data.table as string | undefined;
+      if (t === 'posts' || t === 'projects') {
+        void fetchFeeds();
+      }
+    });
+    return () => unsub();
   }, [showAll]);
 
   return { feeds, loading };

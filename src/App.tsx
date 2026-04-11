@@ -1,14 +1,14 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
-import Home from './pages/Home.tsx';
-import PostDetail from './pages/PostDetail.tsx';
-import ProjectDetail from './pages/ProjectDetail.tsx';
-import Profile from './pages/Profile.tsx';
-import Settings from './pages/Settings.tsx';
-import Notifications from './pages/Notifications.tsx';
-import Navbar from './components/Navbar.tsx';
-import MobileTabBar from './components/MobileTabBar.tsx';
+import Home from './pages/Home';
+import PostDetail from './pages/PostDetail';
+import ProjectDetail from './pages/ProjectDetail';
+import Profile from './pages/Profile';
+import Settings from './pages/Settings';
+import Notifications from './pages/Notifications';
+import Navbar from './components/Navbar';
+import MobileTabBar from './components/MobileTabBar';
 import { AnimatePresence } from 'framer-motion';
 import { theme, Grid } from 'antd';
 

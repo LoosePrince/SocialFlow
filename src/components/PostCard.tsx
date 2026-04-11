@@ -10,7 +10,8 @@ import 'dayjs/locale/zh-cn';
 import LikeList from './LikeList';
 import CommentPreview from './CommentPreview';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../supabase';
+import { apiJson } from '../lib/api';
+import { toMillis } from '../lib/time';
 
 dayjs.extend(relativeTime);
 dayjs.locale('zh-cn');
@@ -36,19 +37,21 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
 
   const isOwner = user?.id === post.authorid;
   const canManage = isAdmin || isOwner;
+  const createdAtMs = toMillis(post.createdat ?? post.createdAt);
 
   const fetchUserLiked = useCallback(async () => {
     if (!user) {
       setLiked(false);
       return;
     }
-    const { data } = await supabase
-      .from('likes')
-      .select('id')
-      .eq('userid', user.id)
-      .eq('contentid', post.id)
-      .maybeSingle();
-    setLiked(!!data);
+    try {
+      const status = await apiJson<{ liked: boolean }>(
+        `/api/likes/status?contentId=${encodeURIComponent(post.id)}`
+      );
+      setLiked(!!status.liked);
+    } catch {
+      setLiked(false);
+    }
   }, [user?.id, post.id]);
 
   useEffect(() => {
@@ -56,17 +59,14 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
   }, [fetchUserLiked, likeListNonce]);
 
   const toggleRecommendation = async () => {
-    const { error, data } = await supabase
-      .from('posts')
-      .update({ isrecommended: !post.isrecommended })
-      .eq('id', post.id)
-      .select()
-      .single();
-    
-    if (error) {
-      message.error('操作失败');
-    } else {
+    try {
+      const data = await apiJson<{ isrecommended?: boolean }>(`/api/posts/${post.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isrecommended: !post.isrecommended }),
+      });
       message.success(data.isrecommended ? '已推荐到首页' : '已取消推荐');
+    } catch {
+      message.error('操作失败');
     }
   };
 
@@ -78,9 +78,12 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
       okType: 'danger',
       cancelText: '取消',
       onOk: async () => {
-        const { error } = await supabase.from('posts').delete().eq('id', post.id);
-        if (error) message.error('删除失败');
-        else message.success('已删除');
+        try {
+          await apiJson(`/api/posts/${post.id}`, { method: 'DELETE' });
+          message.success('已删除');
+        } catch {
+          message.error('删除失败');
+        }
       }
     });
   };
@@ -103,7 +106,9 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
           <Flex vertical>
             <Text strong style={{ fontSize: 15, lineHeight: 1.2 }}>{post.authorName}</Text>
             <Flex align="center" gap={8} style={{ marginTop: 2 }}>
-              <Text type="secondary" style={{ fontSize: 12 }}>{dayjs(post.createdat || post.createdAt).fromNow()}</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {createdAtMs != null ? dayjs(createdAtMs).fromNow() : '—'}
+              </Text>
               {post.isrecommended && <ShieldCheck size={14} style={{ color: token.colorPrimary }} />}
             </Flex>
           </Flex>
@@ -189,7 +194,6 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
                   src={img}
                   alt={`post-img-${idx}`}
                   preview={{ mask: null }}
-                  group="post-images"
                   style={{
                     width: '100%',
                     height: '100%',
