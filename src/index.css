@@ -1,0 +1,67 @@
+:root {
+  --primary-color: #007AFF;
+  --bg-color: #F2F2F7;
+  --text-main: #1C1C1E;
+  --text-sec: #8E8E93;
+  --accent-gradient: linear-gradient(180deg, #3291FF 0%, #0070F3 100%);
+}
+
+[data-theme='dark'] {
+  --primary-color: #0A84FF;
+  --bg-color: #121212;
+  --text-main: #FFFFFF;
+  --text-sec: #A1A1A6;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: 'Outfit', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.5;
+  overflow-x: hidden;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #8E8E93;
+  border-radius: 10px;
+  opacity: 0.3;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #007AFF;
+}
+
+/* Global Transitions */
+a, button {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  text-decoration: none;
+}
+
+/* Ant Design Customization for Gradient Button */
+.ant-btn-primary:not(.ant-btn-dangerous) {
+  background: var(--accent-gradient) !important;
+  border: none !important;
+  box-shadow: 0 2px 4px rgba(0, 112, 243, 0.2);
+}
+
+.ant-btn-primary:not(.ant-btn-dangerous):hover {
+  filter: brightness(1.1);
+  box-shadow: 0 4px 12px rgba(0, 112, 243, 0.3);
+}
+
