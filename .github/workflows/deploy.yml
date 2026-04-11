@@ -1,9 +1,12 @@
 # 前端：构建并部署到 GitHub Pages
 # 后端：构建 Docker 镜像并推送到 ghcr.io（GitHub Packages）
 #
+# push：仅当对应路径有变更时才构建前端 / 打包镜像（共享 package.json 时可能两者都跑）
+# workflow_dispatch：始终构建前端并打包镜像
+#
 # 使用前请在仓库 Settings → Pages → Build and deployment → Source 选择「GitHub Actions」。
-# 静态站点若部署在 https://<user>.github.io/<repo>/ ，请在构建产物中通过 VITE_* 配置 API 地址（如 Secrets）。
-# GitHub Pages 对不存在的路径会返回 404.html；复制 index.html 以便加载 SPA，再由 React Router 处理路由。
+# 静态资源路径见仓库 Variable VITE_BASE_URL（自定义域名根路径常用 /）。
+# GitHub Pages SPA：复制 index.html → 404.html
 
 name: Deploy
 
@@ -23,8 +26,56 @@ permissions:
   packages: write
 
 jobs:
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.out.outputs.frontend }}
+      docker: ${{ steps.out.outputs.docker }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          filters: |
+            frontend:
+              - 'src/**'
+              - 'public/**'
+              - 'index.html'
+              - 'vite.config.ts'
+              - 'tsconfig.json'
+              - 'tsconfig.node.json'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/deploy.yml'
+            docker:
+              - 'server/**'
+              - 'Dockerfile'
+              - 'tsconfig.server.json'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/deploy.yml'
+
+      - id: out
+        run: |
+          FE='${{ steps.filter.outputs.frontend }}'
+          DK='${{ steps.filter.outputs.docker }}'
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            FE=true
+            DK=true
+          fi
+          echo "frontend=$FE" >> "$GITHUB_OUTPUT"
+          echo "docker=$DK" >> "$GITHUB_OUTPUT"
+          echo "frontend=$FE docker=$DK"
+
   frontend:
     name: Build frontend (GitHub Pages)
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,10 +85,17 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Compute Vite base for GitHub Pages
+      - name: Set Vite base (VITE_BASE_URL)
+        env:
+          CUSTOM_BASE: ${{ vars.VITE_BASE_URL }}
         run: |
-          NAME=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
-          echo "VITE_BASE_URL=/${NAME}/" >> "$GITHUB_ENV"
+          if [ -n "$CUSTOM_BASE" ]; then
+            echo "VITE_BASE_URL=$CUSTOM_BASE" >> "$GITHUB_ENV"
+          else
+            NAME=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+            echo "VITE_BASE_URL=/${NAME}/" >> "$GITHUB_ENV"
+          fi
+          echo "Built with VITE_BASE_URL=$VITE_BASE_URL"
 
       - name: Install & build client
         run: |
@@ -64,6 +122,8 @@ jobs:
 
   docker:
     name: Build & push Docker (ghcr.io)
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

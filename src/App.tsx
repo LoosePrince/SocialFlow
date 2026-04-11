@@ -19,12 +19,22 @@ import { theme, Grid } from 'antd';
 
 const { useBreakpoint } = Grid;
 
+/** 与 Vite `base` 一致；自定义域名挂在根路径时用 `/`，子路径部署用 `/repo/` */
+function routerBasename(): string | undefined {
+  const baseUrl = import.meta.env.BASE_URL;
+  if (baseUrl === '/') return undefined;
+  return baseUrl.replace(/\/$/, '') || undefined;
+}
+
 const App: React.FC = () => {
   const { token } = theme.useToken();
   const screens = useBreakpoint();
 
   return (
-    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <Router
+      basename={routerBasename()}
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+    >
       <LoginModalProvider>
         <div style={{ 
           minHeight: '100vh', 
