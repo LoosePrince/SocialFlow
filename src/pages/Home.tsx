@@ -7,17 +7,19 @@ import { Empty, App } from 'antd';
 import { motion } from 'framer-motion';
 import { HomeFeedSkeleton } from '../components/PageSkeletons';
 import { useAuth } from '../context/AuthContext';
+import { useLoginModal } from '../context/LoginModalContext';
 import { toggleLike } from '../utils';
 
 const Home: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { openLoginModal } = useLoginModal();
   const { feeds, loading } = useFeeds();
   const { message } = App.useApp();
 
   const handleLike = async (id: string, type: 'post' | 'project') => {
     if (!user) {
-      message.warning('请先登录后点赞');
+      openLoginModal();
       return;
     }
     try {

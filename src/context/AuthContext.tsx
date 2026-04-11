@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { supabase } from '../supabase';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 import { apiJson } from '../lib/api';
+import { sanitizeReturnPath } from '../lib/navigation';
 
 interface UserProfile {
   id: string;
@@ -16,7 +17,8 @@ interface AuthContextType {
   user: SupabaseUser | null;
   profile: UserProfile | null;
   loading: boolean;
-  login: () => Promise<void>;
+  /** OAuth 完成后进入的站内路径，默认 `/` */
+  login: (returnTo?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   isAdmin: boolean;
@@ -83,11 +85,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  const login = async () => {
+  const login = async (returnTo: string = '/') => {
+    const next = sanitizeReturnPath(returnTo);
+    const url = new URL(`${window.location.origin}/login`);
+    url.searchParams.set('from', next);
     await supabase.auth.signInWithOAuth({
       provider: 'github',
       options: {
-        redirectTo: window.location.origin,
+        redirectTo: url.toString(),
       },
     });
   };

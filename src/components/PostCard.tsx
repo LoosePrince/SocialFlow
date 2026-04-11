@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Space, Button, Popover, App, Flex, Typography, theme, Card, Modal } from 'antd';
 import { GithubCdnAvatar } from './GithubCdnAvatar';
-import { GithubCdnAntImage } from './GithubCdnAntImage';
+import SmartFeedImage from './SmartFeedImage';
 import { Heart, MessageCircle, Share2, MoreHorizontal, ShieldCheck, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -177,50 +177,55 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
               width: '100%',
               maxWidth: 400,
               cursor: 'default',
+              alignItems: 'start',
             }}
           >
             {displayImages.map((img: string, idx: number) => (
               <div
                 key={idx}
                 style={{
-                  position: 'relative',
-                  aspectRatio: '1 / 1',
-                  overflow: 'hidden',
-                  borderRadius: 8,
-                  background: token.colorBgLayout,
+                  display: 'flex',
+                  justifyContent: 'center',
+                  width: '100%',
+                  minWidth: 0,
                 }}
               >
-                <GithubCdnAntImage
-                  src={img}
-                  alt={`post-img-${idx}`}
-                  preview={{ mask: null }}
+                <div
                   style={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'cover',
+                    position: 'relative',
+                    maxWidth: '100%',
+                    lineHeight: 0,
                   }}
-                />
-                {idx === 8 && remainingCount > 0 && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      background: 'rgba(0, 0, 0, 0.4)',
-                      color: 'white',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: 20,
-                      fontWeight: 600,
-                      pointerEvents: 'none',
-                    }}
-                  >
-                    +{remainingCount}
-                  </div>
-                )}
+                >
+                  <SmartFeedImage
+                    src={img}
+                    alt={`post-img-${idx}`}
+                    layout="gridCell"
+                    preview={{ mask: null }}
+                  />
+                  {idx === 8 && remainingCount > 0 && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(0, 0, 0, 0.4)',
+                        color: 'white',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 20,
+                        fontWeight: 600,
+                        pointerEvents: 'none',
+                        borderRadius: token.borderRadius,
+                      }}
+                    >
+                      +{remainingCount}
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>

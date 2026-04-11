@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Button, List, Space, Modal, App, Mentions, Flex, Typography, theme } from 'antd';
+import { Button, List, Space, Modal, App, Mentions, Flex, Typography, theme, Avatar } from 'antd';
 import { GithubCdnAvatar } from './GithubCdnAvatar';
 import LikeList from './LikeList';
 import { useNavigate } from 'react-router-dom';
-import { Send, MessageSquare, MessageCircle, Trash2, Heart } from 'lucide-react';
+import { Send, MessageSquare, MessageCircle, Trash2, Heart, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useUsers } from '../hooks/useUsers';
 import { getGithubUrl } from '../github';
@@ -13,6 +13,7 @@ import dayjs from 'dayjs';
 import { apiJson } from '../lib/api';
 import { subscribeAppEvents } from '../lib/appSse';
 import { toMillis } from '../lib/time';
+import { useLoginModal } from '../context/LoginModalContext';
 
 const { Text } = Typography;
 
@@ -28,6 +29,7 @@ interface CommentSectionProps {
 
 const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType }) => {
   const { user, profile, isAdmin } = useAuth();
+  const { openLoginModal } = useLoginModal();
   const { token } = theme.useToken();
   const [comments, setComments] = useState<any[]>([]);
   const [text, setText] = useState('');
@@ -76,7 +78,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
 
   const handleLike = async () => {
     if (!user) {
-      message.warning('请先登录后点赞');
+      openLoginModal();
       return;
     }
     try {
@@ -128,9 +130,16 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
     return () => unsub();
   }, [contentId, contentType]);
 
+  useEffect(() => {
+    if (!user) {
+      setReplyTo(null);
+      setText('');
+    }
+  }, [user]);
+
   const handleSubmit = async () => {
     if (!user) {
-      message.warning('请先登录后评论');
+      openLoginModal();
       return;
     }
     if (!text.trim()) return;
@@ -223,9 +232,21 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
       </Flex>
 
       <Flex gap={12} style={{ marginBottom: 24 }}>
-        <GithubCdnAvatar src={profile?.photourl} size={40} style={{ flexShrink: 0 }} />
+        {user ? (
+          <GithubCdnAvatar src={profile?.photourl} size={40} style={{ flexShrink: 0 }} />
+        ) : (
+          <Avatar
+            size={40}
+            style={{
+              flexShrink: 0,
+              background: token.colorFillSecondary,
+              color: token.colorTextDescription,
+            }}
+            icon={<User size={20} />}
+          />
+        )}
         <Flex vertical style={{ flex: 1 }}>
-          {replyTo && (
+          {user && replyTo && (
             <Flex justify="space-between" align="center" style={{ 
               background: token.colorBgLayout, 
               padding: '4px 12px', 
@@ -236,33 +257,67 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
               <Button type="link" size="small" onClick={() => setReplyTo(null)}>取消</Button>
             </Flex>
           )}
-          <Flex align="end" gap={8} style={{ 
-            background: token.colorBgLayout, 
-            borderRadius: 12, 
-            padding: 8,
-            border: `1px solid ${token.colorBorderSecondary}`
-          }}>
-            <Mentions
-              placeholder="写下你的精彩评论..."
-              autoSize={{ minRows: 1, maxRows: 6 }}
-              value={text}
-              onChange={(val) => setText(val)}
-              style={{ flex: 1, border: 'none', background: 'transparent', boxShadow: 'none' }}
-              options={users.map(u => ({
-                value: u.displayname,
-                label: u.displayname,
-                key: u.uid,
-              }))}
-            />
-            <Button 
-              type="text"
-              icon={<Send size={20} />} 
-              onClick={handleSubmit}
-              loading={submitting}
-              disabled={!text.trim()}
-              style={{ color: token.colorPrimary }}
-            />
-          </Flex>
+          {user ? (
+            <Flex align="end" gap={8} style={{ 
+              background: token.colorBgLayout, 
+              borderRadius: 12, 
+              padding: 8,
+              border: `1px solid ${token.colorBorderSecondary}`
+            }}>
+              <Mentions
+                placeholder="写下你的精彩评论..."
+                autoSize={{ minRows: 1, maxRows: 6 }}
+                value={text}
+                onChange={(val) => setText(val)}
+                style={{ flex: 1, border: 'none', background: 'transparent', boxShadow: 'none' }}
+                options={users.map(u => ({
+                  value: u.displayname,
+                  label: u.displayname,
+                  key: u.uid,
+                }))}
+              />
+              <Button 
+                type="text"
+                icon={<Send size={20} />} 
+                onClick={handleSubmit}
+                loading={submitting}
+                disabled={!text.trim()}
+                style={{ color: token.colorPrimary }}
+              />
+            </Flex>
+          ) : (
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => openLoginModal()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openLoginModal();
+                }
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                minHeight: 44,
+                padding: '8px 12px',
+                background: token.colorBgLayout,
+                borderRadius: 12,
+                border: `1px solid ${token.colorBorderSecondary}`,
+                cursor: 'pointer',
+                transition: 'border-color 0.2s, background 0.2s',
+              }}
+            >
+              <Text type="secondary" style={{ flex: 1, userSelect: 'none' }}>
+                登录后参与评论…
+              </Text>
+              <Text type="secondary" style={{ fontSize: 12, userSelect: 'none' }}>
+                去登录
+              </Text>
+            </div>
+          )}
         </Flex>
       </Flex>
 
@@ -289,7 +344,13 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
                       type="text" 
                       size="small" 
                       icon={<MessageSquare size={14} />} 
-                      onClick={() => setReplyTo(item)}
+                      onClick={() => {
+                        if (!user) {
+                          openLoginModal();
+                          return;
+                        }
+                        setReplyTo(item);
+                      }}
                       style={{ color: token.colorTextSecondary, padding: 0, width: 'fit-content' }}
                     >
                       回复
@@ -329,7 +390,13 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
                               type="text" 
                               size="small" 
                               icon={<MessageSquare size={12} />} 
-                              onClick={() => setReplyTo(reply)}
+                              onClick={() => {
+                                if (!user) {
+                                  openLoginModal();
+                                  return;
+                                }
+                                setReplyTo(reply);
+                              }}
                               style={{ width: 'fit-content', padding: 0 }}
                             >
                               回复

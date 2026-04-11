@@ -1,7 +1,7 @@
 import { Badge, Button, Dropdown, Flex, Grid, Input, MenuProps, Typography, theme } from 'antd';
 import { Bell, LogOut, PlusCircle, Search, Settings, User as UserIcon } from 'lucide-react';
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useNotificationCenter } from '../context/NotificationContext';
 import CreateModal from './CreateModal';
@@ -11,10 +11,11 @@ const { Text } = Typography;
 const { useBreakpoint } = Grid;
 
 const Navbar: React.FC = () => {
-  const { user, profile, login, logout } = useAuth();
+  const { user, profile, logout } = useAuth();
   const { unreadCount } = useNotificationCenter();
   const [createVisible, setCreateVisible] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { token } = theme.useToken();
   const screens = useBreakpoint();
 
@@ -92,10 +93,12 @@ const Navbar: React.FC = () => {
         {screens.md && (
           <div style={{ flex: 1, maxWidth: 400, margin: '0 40px' }}>
             <Input
+              readOnly
               prefix={<Search size={16} style={{ color: token.colorTextDescription }} />}
               placeholder="搜索动态、项目或用户..."
               variant="filled"
-              style={{ borderRadius: 20, height: 36, background: token.colorBgLayout }}
+              style={{ borderRadius: 20, height: 36, background: token.colorBgLayout, cursor: 'pointer' }}
+              onClick={() => navigate('/search')}
             />
           </div>
         )}
@@ -134,7 +137,13 @@ const Navbar: React.FC = () => {
               </Flex>
             </Dropdown>
           ) : (
-            <Button type="primary" onClick={login} shape="round">
+            <Button
+              type="primary"
+              onClick={() =>
+                navigate(`/login?from=${encodeURIComponent(location.pathname + location.search)}`)
+              }
+              shape="round"
+            >
               登录
             </Button>
           )}

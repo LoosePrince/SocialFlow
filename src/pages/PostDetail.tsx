@@ -4,7 +4,7 @@ import { apiJson } from '../lib/api';
 import { Typography, Button, App, Card, theme, Flex } from 'antd';
 import { PostDetailPageSkeleton } from '../components/PageSkeletons';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
-import { GithubCdnImg } from '../components/GithubCdnImg';
+import SmartFeedImage from '../components/SmartFeedImage';
 import { ArrowLeft, Clock } from 'lucide-react';
 import { getGithubUrl } from '../github';
 import CommentSection from '../components/CommentSection';
@@ -114,16 +114,15 @@ const PostDetail: React.FC = () => {
         {post.images && post.images.length > 0 && (
           <Flex vertical gap={12}>
             {post.images.map((img: string, idx: number) => (
-              <GithubCdnImg 
-                key={idx} 
-                src={img} 
-                style={{ 
-                  width: '100%', 
-                  borderRadius: token.borderRadius,
-                  boxShadow: token.boxShadowSecondary 
-                }} 
-                alt="" 
-              />
+              <div key={idx} style={{ boxShadow: token.boxShadowSecondary, borderRadius: token.borderRadius, overflow: 'hidden' }}>
+                <SmartFeedImage
+                  src={img}
+                  alt=""
+                  layout="stacked"
+                  preview={{}}
+                  style={{ borderRadius: token.borderRadius }}
+                />
+              </div>
             ))}
           </Flex>
         )}
