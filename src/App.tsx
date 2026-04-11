@@ -9,6 +9,7 @@ import Settings from './pages/Settings';
 import Notifications from './pages/Notifications';
 import Login from './pages/Login';
 import SearchPage from './pages/Search';
+import NotFound from './pages/NotFound';
 import Navbar from './components/Navbar';
 import MobileTabBar from './components/MobileTabBar';
 import RequireAuth from './components/RequireAuth';
@@ -48,6 +49,7 @@ const App: React.FC = () => {
                 <Route path="/notifications" element={<RequireAuth><Notifications /></RequireAuth>} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/search" element={<SearchPage />} />
+                <Route path="*" element={<NotFound />} />
               </Routes>
             </AnimatePresence>
           </main>

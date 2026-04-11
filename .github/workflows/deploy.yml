@@ -3,6 +3,7 @@
 #
 # 使用前请在仓库 Settings → Pages → Build and deployment → Source 选择「GitHub Actions」。
 # 静态站点若部署在 https://<user>.github.io/<repo>/ ，请在构建产物中通过 VITE_* 配置 API 地址（如 Secrets）。
+# GitHub Pages 对不存在的路径会返回 404.html；复制 index.html 以便加载 SPA，再由 React Router 处理路由。
 
 name: Deploy
 
@@ -42,6 +43,9 @@ jobs:
         run: |
           npm ci
           npm run build:client
+
+      - name: Copy index.html to 404.html (GitHub Pages SPA)
+        run: cp dist/index.html dist/404.html
 
       - uses: actions/upload-pages-artifact@v3
         with:
