@@ -6,6 +6,10 @@
 #
 # 使用前请在仓库 Settings → Pages → Build and deployment → Source 选择「GitHub Actions」。
 # 静态资源路径见仓库 Variable VITE_BASE_URL（自定义域名根路径常用 /）。
+# 前端构建注入（与本地 .env 一致）：Supabase/API 用 Actions secrets：
+#   VITE_SUPABASE_URL、VITE_SUPABASE_PUBLISHABLE_KEY；可选 VITE_API_URL。
+# GitHub CDN 解析（非敏感）可用 Actions variables：
+#   VITE_GITHUB_USER、VITE_GITHUB_REPO、VITE_GITHUB_UPLOAD_PATH。
 # GitHub Pages SPA：复制 index.html → 404.html
 
 name: Deploy
@@ -97,7 +101,15 @@ jobs:
           fi
           echo "Built with VITE_BASE_URL=$VITE_BASE_URL"
 
+      # Vite 在构建时注入 VITE_*（与本地 .env 一致）；缺 Supabase 会报 supabaseUrl is required
       - name: Install & build client
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_GITHUB_USER: ${{ vars.VITE_GITHUB_USER }}
+          VITE_GITHUB_REPO: ${{ vars.VITE_GITHUB_REPO }}
+          VITE_GITHUB_UPLOAD_PATH: ${{ vars.VITE_GITHUB_UPLOAD_PATH }}
         run: |
           npm ci
           npm run build:client
