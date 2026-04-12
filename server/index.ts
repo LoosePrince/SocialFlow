@@ -4,6 +4,8 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { stream } from 'hono/streaming';
 import { sql, listenSql } from './db.js';
+import { startCountReconcileScheduler } from './countReconcile.js';
+import { runDatabaseStartup } from './migrations.js';
 import {
   authMiddleware,
   metadataFromJwt,
@@ -627,11 +629,17 @@ async function startListen() {
     });
     console.log('[server] listening on pg channel app_events');
   } catch (e) {
-    console.warn('[server] pg listen failed (run notify-triggers.sql?):', e);
+    console.warn('[server] pg listen failed (check migrations 002_notify_triggers.sql):', e);
   }
 }
+
+await runDatabaseStartup(sql).catch((err) => {
+  console.error('[db] 启动阶段数据库处理失败:', err);
+  process.exit(1);
+});
 
 serve({ fetch: app.fetch, port: PORT }, (info) => {
   console.log(`[server] http://localhost:${info.port}`);
   void startListen();
+  startCountReconcileScheduler(sql);
 });

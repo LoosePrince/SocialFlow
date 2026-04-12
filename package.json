@@ -9,7 +9,7 @@
     "dev:server": "tsx watch server/index.ts",
     "build": "npm run build:client",
     "build:client": "tsc && vite build",
-    "build:server": "tsc -p tsconfig.server.json",
+    "build:server": "tsc -p tsconfig.server.json && node --input-type=module -e \"import fs from 'node:fs'; fs.cpSync('server/migrations','dist-server/migrations',{recursive:true});\"",
     "start": "node dist-server/index.js",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"

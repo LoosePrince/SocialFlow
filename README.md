@@ -28,7 +28,7 @@
 
 2. 配置环境变量：复制 `.env.example` 为 `.env`，填写前端 `VITE_*` 与后端 `DATABASE_URL`、`SUPABASE_JWT_SECRET`、`ADMIN_EMAIL`、`GITHUB_*` 等（详见 `.env.example` 注释）。
 
-3. 在 Supabase SQL Editor 中执行 [`server/sql/notify-triggers.sql`](server/sql/notify-triggers.sql)，以便列表/通知等能通过 SSE 收到数据库变更（未执行时服务端会降级，仅轮询或手动刷新仍可部分工作）。
+3. 数据库结构：后端启动时会自动执行 `server/migrations/` 下的 SQL（建表、NOTIFY 触发器等），并在 `app_schema_migrations` 中记录版本；新增变更时在该目录增加按文件名排序的新 `.sql` 即可。若需跳过迁移（例如只读连接），可设置环境变量 `SKIP_DB_MIGRATIONS=1`。
 
 4. 启动开发（同时启动 Vite 与 API，默认 API 端口 `8787`）:
 
