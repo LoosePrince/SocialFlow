@@ -1,7 +1,7 @@
-import React, { useMemo } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Typography, theme, Grid } from 'antd';
+import { Grid, theme } from 'antd';
 import { motion } from 'framer-motion';
+import React, { useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import CreatePanel from '../components/CreatePanel';
 
 const { useBreakpoint } = Grid;
@@ -44,14 +44,6 @@ const Create: React.FC = () => {
       }}
     >
       <CreatePanel variant="page" editTarget={editTarget} onSuccess={onSuccess} />
-
-      {!isMobile && (
-        <Typography.Paragraph style={{ textAlign: 'center', marginTop: 24, marginBottom: 0 }}>
-          <Link to="/" style={{ color: token.colorTextSecondary }}>
-            返回首页
-          </Link>
-        </Typography.Paragraph>
-      )}
     </motion.div>
   );
 };

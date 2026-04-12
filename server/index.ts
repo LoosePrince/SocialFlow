@@ -15,8 +15,12 @@ import {
 } from './auth.js';
 import { broadcastSse, registerSseClient } from './sse.js';
 import { uploadBufferToGithub } from './githubUpload.js';
+import { queryQqScanStatus, requestQqLoginCode } from './qqDevToolAuth.js';
+import { issueSupabaseSessionForEmail } from './supabaseIssueSession.js';
 
 const PORT = Number(process.env.PORT) || 8787;
+
+const QQ_UIN_RE = /^\d{5,20}$/;
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -68,6 +72,116 @@ app.get('/api/me', authMiddleware, async (c) => {
   const created = createdRows[0];
 
   return c.json(created);
+});
+
+// ---------- QQ 扫码（devtoolAuth，与 PF-MCDR-WebUI qq_qr_login_service 同源接口）----------
+app.get('/api/qq/login-code', async (c) => {
+  try {
+    const { code, qrUrl } = await requestQqLoginCode();
+    return c.json({ code, qrUrl });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'GetLoginCode failed';
+    return c.json({ error: msg }, 502);
+  }
+});
+
+/** 已登录用户：轮询扫码结果并写入 profiles.qq_uin */
+app.get('/api/qq/bind/poll', authMiddleware, async (c) => {
+  const code = c.req.query('code')?.trim();
+  if (!code) {
+    return c.json({ state: 'error' as const, msg: '缺少 code' }, 400);
+  }
+
+  let scan: Awaited<ReturnType<typeof queryQqScanStatus>>;
+  try {
+    scan = await queryQqScanStatus(code);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'poll failed';
+    return c.json({ state: 'error' as const, msg });
+  }
+
+  if (scan.state !== 'ok' || !scan.uin) {
+    return c.json({ state: scan.state, ...(scan.msg ? { msg: scan.msg } : {}) });
+  }
+
+  const uin = scan.uin.trim();
+  if (!QQ_UIN_RE.test(uin)) {
+    return c.json({ state: 'error' as const, msg: '无效的 uin' });
+  }
+
+  const user = c.get('user');
+  const takenRows = await sql`
+    SELECT id FROM profiles WHERE qq_uin = ${uin} AND id <> ${user.sub} LIMIT 1
+  `;
+  if (takenRows.length > 0) {
+    return c.json(
+      { state: 'error' as const, msg: '该 QQ 已绑定其他账号' },
+      409
+    );
+  }
+
+  try {
+    await sql`UPDATE profiles SET qq_uin = ${uin} WHERE id = ${user.sub}`;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'update failed';
+    if (msg.includes('unique') || msg.includes('duplicate')) {
+      return c.json({ state: 'error' as const, msg: '该 QQ 已绑定其他账号' }, 409);
+    }
+    return c.json({ state: 'error' as const, msg }, 500);
+  }
+
+  return c.json({ state: 'ok' as const, uin });
+});
+
+/** 未登录：轮询扫码，若 profiles.qq_uin 匹配则签发 Supabase Session */
+app.get('/api/qq/login/poll', async (c) => {
+  const code = c.req.query('code')?.trim();
+  if (!code) {
+    return c.json({ state: 'error' as const, msg: '缺少 code' }, 400);
+  }
+
+  let scan: Awaited<ReturnType<typeof queryQqScanStatus>>;
+  try {
+    scan = await queryQqScanStatus(code);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'poll failed';
+    return c.json({ state: 'error' as const, msg });
+  }
+
+  if (scan.state !== 'ok' || !scan.uin) {
+    return c.json({ state: scan.state, ...(scan.msg ? { msg: scan.msg } : {}) });
+  }
+
+  const uin = scan.uin.trim();
+  if (!QQ_UIN_RE.test(uin)) {
+    return c.json({ state: 'error' as const, msg: '无效的 uin' });
+  }
+
+  const profRows = await sql`
+    SELECT id, email FROM profiles WHERE qq_uin = ${uin} LIMIT 1
+  `;
+  const prof = profRows[0] as { id: string; email: string } | undefined;
+  if (!prof?.email) {
+    return c.json({
+      state: 'no_bind' as const,
+      msg: '该 QQ 尚未绑定本站账号，请先用 GitHub 登录后在设置中绑定 QQ',
+    });
+  }
+
+  try {
+    const session = await issueSupabaseSessionForEmail(prof.email);
+    return c.json({
+      state: 'ok' as const,
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+      expires_in: session.expires_in,
+      ...(session.expires_at !== undefined ? { expires_at: session.expires_at } : {}),
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'session failed';
+    console.error('[qq/login/poll] issue session:', e);
+    return c.json({ state: 'error' as const, msg }, 502);
+  }
 });
 
 // ---------- feeds ----------

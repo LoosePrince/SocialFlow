@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Typography, Card, Switch, List, Button, Input, Form, Divider, App, Upload } from 'antd';
+import { QqOutlined } from '@ant-design/icons';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
+import QqQrModal from '../components/QqQrModal';
 import { Moon, Save, LogOut, Camera, Info } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
@@ -17,7 +19,12 @@ const Settings: React.FC = () => {
   const { mode, toggleTheme } = useTheme();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const [qqModalOpen, setQqModalOpen] = useState(false);
   const { message } = App.useApp();
+
+  const onQqBindDone = useCallback(() => {
+    void refreshProfile();
+  }, [refreshProfile]);
 
   useEffect(() => {
     if (profile) {
@@ -114,6 +121,35 @@ const Settings: React.FC = () => {
           </Button>
         </Form>
       </Card>
+
+      <Title level={4} style={{ marginTop: 32 }}>账号绑定</Title>
+      <Card className="card" style={{ marginTop: 12 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16 }}>
+          <div style={{ flex: '1 1 200px' }}>
+            <Text strong>QQ</Text>
+            <br />
+            <Text type="secondary">
+              {profile?.qq_uin
+                ? `已绑定（uin: ${profile.qq_uin}）`
+                : '未绑定：绑定后可使用 QQ 扫码登录'}
+            </Text>
+          </div>
+          <Button
+            type="primary"
+            icon={<QqOutlined />}
+            onClick={() => setQqModalOpen(true)}
+          >
+            {profile?.qq_uin ? '重新绑定 QQ' : '绑定 QQ'}
+          </Button>
+        </div>
+      </Card>
+
+      <QqQrModal
+        open={qqModalOpen}
+        mode="bind"
+        onClose={() => setQqModalOpen(false)}
+        onBindComplete={onQqBindDone}
+      />
       
       <Title level={4} style={{ marginTop: 32 }}>应用</Title>
       <Card className="card" style={{ marginTop: 12 }}>

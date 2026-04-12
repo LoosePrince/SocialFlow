@@ -1,9 +1,9 @@
-import React, { useEffect, useMemo } from 'react';
-import { useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { Typography, theme, Spin } from 'antd';
+import { Spin, theme } from 'antd';
 import { motion } from 'framer-motion';
-import { useAuth } from '../context/AuthContext';
+import React, { useEffect, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import LoginPanel from '../components/LoginPanel';
+import { useAuth } from '../context/AuthContext';
 import { sanitizeReturnPath } from '../lib/navigation';
 
 const Login: React.FC = () => {
@@ -38,12 +38,6 @@ const Login: React.FC = () => {
       style={{ maxWidth: 420, margin: '0 auto', paddingBottom: 48 }}
     >
       <LoginPanel variant="page" returnTo={returnTo} />
-
-      <div style={{ textAlign: 'center', marginTop: 24 }}>
-        <Link to="/" style={{ color: token.colorTextSecondary }}>
-          返回首页
-        </Link>
-      </div>
     </motion.div>
   );
 };

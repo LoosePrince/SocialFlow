@@ -11,6 +11,8 @@ interface UserProfile {
   photourl: string;
   role: 'admin' | 'user';
   createdat: number;
+  /** 绑定后的 QQ uin，未绑定时可能为空或缺省 */
+  qq_uin?: string | null;
 }
 
 interface AuthContextType {

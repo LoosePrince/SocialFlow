@@ -1,7 +1,9 @@
-import React from 'react';
-import { Card, Form, Input, Button, Typography, Divider, Alert, Space, theme } from 'antd';
+import { QqOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Divider, Form, Input, Space, theme, Typography } from 'antd';
 import { Github } from 'lucide-react';
+import React, { useCallback, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import QqQrModal from './QqQrModal';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -16,10 +18,13 @@ export interface LoginPanelProps {
 const LoginPanel: React.FC<LoginPanelProps> = ({ variant = 'page', returnTo }) => {
   const { login } = useAuth();
   const { token } = theme.useToken();
+  const [qqOpen, setQqOpen] = useState(false);
 
   const handleGithub = () => {
     void login(returnTo);
   };
+
+  const closeQq = useCallback(() => setQqOpen(false), []);
 
   const inner = (
     <>
@@ -27,7 +32,7 @@ const LoginPanel: React.FC<LoginPanelProps> = ({ variant = 'page', returnTo }) =
         type="info"
         showIcon
         message="邮箱与密码登录、注册暂未开放"
-        description="若需账号密码方式，请等待后续版本；当前请使用 GitHub 登录。"
+        description="若需账号密码方式，请等待后续版本。首次请使用 GitHub 登录。"
         style={{ marginBottom: variant === 'modal' ? 12 : 20 }}
       />
 
@@ -77,7 +82,26 @@ const LoginPanel: React.FC<LoginPanelProps> = ({ variant = 'page', returnTo }) =
         >
           使用 GitHub 继续
         </Button>
+
+        <Button
+          block
+          size="large"
+          icon={<QqOutlined style={{ fontSize: 18 }} />}
+          onClick={() => setQqOpen(true)}
+          style={{
+            marginTop: 12,
+            height: 48,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+          }}
+        >
+          使用 QQ 登录
+        </Button>
       </Card>
+
+      <QqQrModal open={qqOpen} mode="login" onClose={closeQq} returnTo={returnTo} />
     </>
   );
 
