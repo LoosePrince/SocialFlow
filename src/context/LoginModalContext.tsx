@@ -58,7 +58,7 @@ export const LoginModalProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         open={open}
         onCancel={closeLoginModal}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
         width={440}
       >
         {open ? <LoginModalBody onClose={closeLoginModal} /> : null}

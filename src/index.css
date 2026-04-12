@@ -65,3 +65,41 @@ a, button {
   box-shadow: 0 4px 12px rgba(0, 112, 243, 0.3);
 }
 
+/* 发布页 /create：移动端 Tab、横向滑动图片格 */
+@media (max-width: 767px) {
+  .create-page-tabs .ant-tabs-nav {
+    margin-bottom: 8px;
+  }
+  .create-page-tabs .ant-tabs-tab {
+    padding: 10px 12px;
+    font-size: 15px;
+  }
+  .create-page-upload-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    margin-left: -16px;
+    margin-right: -16px;
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-bottom: 8px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .create-page-upload-scroll .ant-upload-list {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 8px;
+  }
+
+  .create-page-upload-scroll .ant-upload.ant-upload-select,
+  .create-page-upload-scroll .ant-upload-list-item-container {
+    width: 80px !important;
+    height: 80px !important;
+    margin-inline-end: 0 !important;
+  }
+
+  .create-page-project-upload .ant-upload-list-item {
+    margin-top: 8px;
+  }
+}
+

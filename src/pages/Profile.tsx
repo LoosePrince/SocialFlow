@@ -3,21 +3,25 @@ import { useAuth } from '../context/AuthContext';
 import { useFeeds } from '../hooks/useFeeds';
 import PostCard from '../components/PostCard';
 import ProjectCard from '../components/ProjectCard';
-import { Typography, Space, Divider, Empty, Flex, theme, Card } from 'antd';
+import { Typography, Space, Divider, Empty, Flex, theme, Card, Button, Grid } from 'antd';
 import { ProfilePageSkeleton } from '../components/PageSkeletons';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
 import { motion } from 'framer-motion';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useUsers } from '../hooks/useUsers';
+import { Settings } from 'lucide-react';
 
 const { Title, Text } = Typography;
+const { useBreakpoint } = Grid;
 
 const Profile: React.FC = () => {
   const { uid } = useParams();
+  const navigate = useNavigate();
   const { user: currentUser, profile: currentProfile, loading: authLoading } = useAuth();
   const { users } = useUsers();
   const { feeds, loading: feedsLoading } = useFeeds(true);
   const { token } = theme.useToken();
+  const screens = useBreakpoint();
 
   const targetUid = uid || currentUser?.id;
   const isOwnProfile = targetUid === currentUser?.id;
@@ -51,10 +55,20 @@ const Profile: React.FC = () => {
           marginBottom: 24, 
           boxShadow: token.boxShadow,
           borderRadius: token.borderRadiusLG,
-          overflow: 'hidden'
+          overflow: 'hidden',
+          position: 'relative',
         }}
         styles={{ body: { padding: 0 } }}
       >
+        {isOwnProfile && !screens.md && (
+          <Button
+            type="text"
+            icon={<Settings size={22} strokeWidth={2} />}
+            onClick={() => navigate('/settings')}
+            aria-label="设置"
+            style={{ position: 'absolute', top: 12, right: 8, zIndex: 1 }}
+          />
+        )}
         <Flex vertical align="center" style={{ padding: '32px 24px 24px', textAlign: 'center' }}>
           <GithubCdnAvatar 
             src={displayProfile.photourl} 

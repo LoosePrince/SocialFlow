@@ -281,8 +281,8 @@ export function ProjectDetailPageSkeleton() {
   );
 }
 
-/** 通知列表（外层由页面加 main-container） */
-export function NotificationsPageSkeleton() {
+/** 消息列表（外层由页面加 main-container） */
+export function MessagesPageSkeleton() {
   const { token } = theme.useToken();
   return (
     <>

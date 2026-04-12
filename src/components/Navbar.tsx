@@ -106,13 +106,15 @@ const Navbar: React.FC = () => {
         <Flex align="center" gap={16}>
           {user && (
             <>
-              <Badge count={unreadCount} size="small" offset={[-2, 4]}>
-                <Button
-                  type="text"
-                  icon={<Bell size={20} />}
-                  onClick={() => navigate('/notifications')}
-                />
-              </Badge>
+              {screens.md && (
+                <Badge count={unreadCount} size="small" offset={[-2, 4]}>
+                  <Button
+                    type="text"
+                    icon={<Bell size={20} />}
+                    onClick={() => navigate('/messages')}
+                  />
+                </Badge>
+              )}
               {screens.md && (
                 <Button
                   type="text"
@@ -126,16 +128,32 @@ const Navbar: React.FC = () => {
           )}
 
           {user ? (
-            <Dropdown menu={{ items }} placement="bottomRight" arrow>
-              <Flex align="center" gap={10} style={{
-                cursor: 'pointer',
-                padding: '4px 8px',
-                borderRadius: 20,
-              }}>
+            screens.md ? (
+              <Dropdown menu={{ items }} placement="bottomRight" arrow>
+                <Flex align="center" gap={10} style={{
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  borderRadius: 20,
+                }}>
+                  <GithubCdnAvatar src={profile?.photourl} size="default" />
+                  <Text strong style={{ fontSize: 14 }}>{profile?.displayname}</Text>
+                </Flex>
+              </Dropdown>
+            ) : (
+              <Link
+                to="/profile"
+                aria-label="个人主页"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '4px 4px 4px 8px',
+                  borderRadius: 20,
+                  color: 'inherit',
+                }}
+              >
                 <GithubCdnAvatar src={profile?.photourl} size="default" />
-                {screens.md && <Text strong style={{ fontSize: 14 }}>{profile?.displayname}</Text>}
-              </Flex>
-            </Dropdown>
+              </Link>
+            )
           ) : (
             <Button
               type="primary"
