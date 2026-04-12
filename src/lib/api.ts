@@ -65,13 +65,20 @@ export async function apiJson<T>(path: string, init: RequestInit = {}): Promise<
   return res.json() as Promise<T>;
 }
 
-/** 媒体上传（后端转存 GitHub） */
-export async function uploadMedia(file: File): Promise<string> {
+export type UploadScope = 'post' | 'project' | 'profile';
+
+/** 媒体上传（后端转存 GitHub，路径规范见服务端 githubUpload） */
+export async function uploadMedia(
+  file: File,
+  options: { scope: UploadScope; contentId: string }
+): Promise<string> {
   const fd = new FormData();
   fd.append('file', file);
+  fd.append('scope', options.scope);
+  fd.append('contentId', options.contentId);
   const res = await apiFetch('/api/uploads', { method: 'POST', body: fd });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { error?: string };
+    const err = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(err.error || 'Upload failed');
   }
   const data = (await res.json()) as { path: string };

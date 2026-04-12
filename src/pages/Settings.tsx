@@ -49,9 +49,13 @@ const Settings: React.FC = () => {
   };
 
   const onAvatarUpload = async (file: File) => {
+    if (!user?.id) return false;
     try {
       setLoading(true);
-      const relativePath = await uploadToGithub(file);
+      const relativePath = await uploadToGithub(file, {
+        scope: 'profile',
+        contentId: user.id,
+      });
       form.setFieldsValue({ photourl: relativePath });
       message.success('头像已上传，请点击保存修改');
     } catch (e: any) {
@@ -102,7 +106,7 @@ const Settings: React.FC = () => {
           </Form.Item>
           
           <Form.Item name="photourl" label="头像路径 (GitHub 相对路径或外部 URL)">
-            <Input placeholder="SocialFlow/avatar.jpg 或 https://..." size="large" />
+            <Input placeholder="profile/<用户ID>/<crc32>.jpg 或 https://..." size="large" />
           </Form.Item>
 
           <Button type="primary" htmlType="submit" loading={loading} icon={<Save size={18} />} block size="large">

@@ -18,6 +18,9 @@ import { uploadBufferToGithub } from './githubUpload.js';
 
 const PORT = Number(process.env.PORT) || 8787;
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 type Variables = { user: AuthUser };
 const app = new Hono<{ Variables: Variables }>();
 
@@ -177,12 +180,20 @@ app.patch('/api/profile', authMiddleware, async (c) => {
 app.post('/api/posts', authMiddleware, async (c) => {
   const user = c.get('user');
   const body = await c.req.json<{
+    id?: string;
     content: string;
     images?: string[];
     isrecommended?: boolean;
   }>();
   if (!body.content) return c.json({ error: 'content required' }, 400);
-  const id = crypto.randomUUID();
+  let id = body.id?.trim();
+  if (id) {
+    if (!UUID_RE.test(id)) return c.json({ error: 'invalid id' }, 400);
+    const taken = await sql`SELECT 1 FROM posts WHERE id = ${id} LIMIT 1`;
+    if (taken.length > 0) return c.json({ error: 'id already exists' }, 409);
+  } else {
+    id = crypto.randomUUID();
+  }
   const createdat = Date.now();
   const meRows = await sql`SELECT role FROM profiles WHERE id = ${user.sub} LIMIT 1`;
   const me = meRows[0] as { role: string } | undefined;
@@ -291,6 +302,7 @@ app.delete('/api/posts/:id', authMiddleware, async (c) => {
 app.post('/api/projects', authMiddleware, async (c) => {
   const user = c.get('user');
   const body = await c.req.json<{
+    id?: string;
     title: string;
     summary?: string;
     content: string;
@@ -299,7 +311,14 @@ app.post('/api/projects', authMiddleware, async (c) => {
     isrecommended?: boolean;
   }>();
   if (!body.title || !body.content) return c.json({ error: 'title and content required' }, 400);
-  const id = crypto.randomUUID();
+  let id = body.id?.trim();
+  if (id) {
+    if (!UUID_RE.test(id)) return c.json({ error: 'invalid id' }, 400);
+    const taken = await sql`SELECT 1 FROM projects WHERE id = ${id} LIMIT 1`;
+    if (taken.length > 0) return c.json({ error: 'id already exists' }, 409);
+  } else {
+    id = crypto.randomUUID();
+  }
   const createdat = Date.now();
   const meRows = await sql`SELECT role FROM profiles WHERE id = ${user.sub} LIMIT 1`;
   const me = meRows[0] as { role: string } | undefined;
@@ -708,16 +727,43 @@ app.patch('/api/notifications/:id/read', authMiddleware, async (c) => {
 
 // ---------- upload ----------
 app.post('/api/uploads', authMiddleware, async (c) => {
+  const user = c.get('user');
   const body = await c.req.parseBody();
   const file = body['file'];
+  const scope = String(body['scope'] ?? '');
+  const contentIdRaw = String(body['contentId'] ?? '').trim();
+
   if (!file || !(file instanceof File)) {
     return c.json({ error: 'file required' }, 400);
   }
+  if (scope !== 'post' && scope !== 'project' && scope !== 'profile') {
+    return c.json({ error: 'invalid scope' }, 400);
+  }
+
+  let contentId: string;
+  if (scope === 'profile') {
+    contentId = user.sub;
+  } else {
+    contentId = contentIdRaw;
+    if (!UUID_RE.test(contentId)) {
+      return c.json({ error: 'invalid contentId' }, 400);
+    }
+  }
+
   const buf = Buffer.from(await file.arrayBuffer());
-  const base64 = buf.toString('base64');
-  const safeName = `${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
-  const relative = await uploadBufferToGithub(safeName, base64);
-  return c.json({ path: relative });
+  try {
+    const relative = await uploadBufferToGithub(
+      buf,
+      scope,
+      contentId,
+      file.name || 'file',
+      file.type || 'application/octet-stream'
+    );
+    return c.json({ path: relative });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Upload failed';
+    return c.json({ error: msg }, 500);
+  }
 });
 
 // ---------- SSE ----------

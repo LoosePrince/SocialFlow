@@ -1,10 +1,17 @@
-import { uploadMedia } from './lib/api';
+import { uploadMedia, type UploadScope } from './lib/api';
 
 const GITHUB_USER = import.meta.env.VITE_GITHUB_USER;
 const GITHUB_REPO = import.meta.env.VITE_GITHUB_REPO;
 const GITHUB_UPLOAD_PATH = import.meta.env.VITE_GITHUB_UPLOAD_PATH;
 
-export const uploadToGithub = uploadMedia;
+export type { UploadScope };
+
+export function uploadToGithub(
+  file: File,
+  options: { scope: UploadScope; contentId: string }
+): Promise<string> {
+  return uploadMedia(file, options);
+}
 
 const DEFAULT_BRANCH = 'main';
 

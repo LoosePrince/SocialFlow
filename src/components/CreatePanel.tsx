@@ -42,6 +42,9 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
   const { user, isAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
   const [loadingEdit, setLoadingEdit] = useState(!!editTarget);
+  /** 新建动态/项目时与上传目录一致，需在 POST 时带上同一 id */
+  const [postDraftId, setPostDraftId] = useState(() => crypto.randomUUID());
+  const [projectDraftId, setProjectDraftId] = useState(() => crypto.randomUUID());
   const [postForm] = Form.useForm();
   const [projectForm] = Form.useForm();
   const [postFileList, setPostFileList] = useState<UploadFile[]>([]);
@@ -71,6 +74,11 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
   const watchedProjectTitle = Form.useWatch('title', projectForm) as string | undefined;
   const watchedProjectSummary = Form.useWatch('summary', projectForm) as string | undefined;
   const watchedProjectContent = Form.useWatch('projectContent', projectForm) as string | undefined;
+
+  const postUploadContentId =
+    editTarget?.kind === 'post' ? editTarget.id : postDraftId;
+  const projectUploadContentId =
+    editTarget?.kind === 'project' ? editTarget.id : projectDraftId;
 
   useEffect(() => {
     if (!editTarget || !user) {
@@ -158,7 +166,9 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
     if (!user) return;
     setLoading(true);
     try {
-      const filePaths = await pathsFromUploadList(postFileList, uploadToGithub);
+      const filePaths = await pathsFromUploadList(postFileList, (f) =>
+        uploadToGithub(f, { scope: 'post', contentId: postUploadContentId })
+      );
 
       if (editTarget?.kind === 'post') {
         await apiJson(`/api/posts/${editTarget.id}`, {
@@ -174,12 +184,14 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
         await apiJson('/api/posts', {
           method: 'POST',
           body: JSON.stringify({
+            id: postUploadContentId,
             content: values.content,
             images: filePaths,
             isrecommended: isAdmin ? !!values.isrecommended : false,
           }),
         });
         message.success('动态发布成功');
+        setPostDraftId(crypto.randomUUID());
       }
 
       postForm.resetFields();
@@ -201,7 +213,9 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
     if (!user) return;
     setLoading(true);
     try {
-      const filePaths = await pathsFromUploadList(projectFileList, uploadToGithub);
+      const filePaths = await pathsFromUploadList(projectFileList, (f) =>
+        uploadToGithub(f, { scope: 'project', contentId: projectUploadContentId })
+      );
       const coverurl = filePaths[0] ?? '';
       const attachments = filePaths.slice(1);
 
@@ -222,6 +236,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
         await apiJson('/api/projects', {
           method: 'POST',
           body: JSON.stringify({
+            id: projectUploadContentId,
             title: values.title,
             summary: values.summary,
             content: values.projectContent,
@@ -231,6 +246,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
           }),
         });
         message.success('项目创建成功');
+        setProjectDraftId(crypto.randomUUID());
       }
 
       projectForm.resetFields();
