@@ -9,6 +9,7 @@ import { useUsers } from '../hooks/useUsers';
 import { getGithubUrl } from '../github';
 import { toggleLike } from '../utils';
 import CommentText from './CommentText';
+import OwoEmojiPicker from './OwoEmojiPicker';
 import dayjs from 'dayjs';
 import { apiJson } from '../lib/api';
 import { subscribeAppEvents } from '../lib/appSse';
@@ -222,12 +223,19 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
         okText="保存"
         destroyOnClose
       >
-        <Input.TextArea
-          rows={5}
-          value={editCommentText}
-          onChange={(e) => setEditCommentText(e.target.value)}
-          placeholder="修改评论内容"
-        />
+        <Flex align="start" gap={8}>
+          <Input.TextArea
+            rows={5}
+            value={editCommentText}
+            onChange={(e) => setEditCommentText(e.target.value)}
+            placeholder="修改评论内容"
+            style={{ flex: 1 }}
+          />
+          <OwoEmojiPicker
+            buttonSize="middle"
+            onInsert={(ph) => setEditCommentText((t) => t + ph)}
+          />
+        </Flex>
       </Modal>
       <div
         style={{
@@ -313,6 +321,9 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
                   label: u.displayname,
                   key: u.uid,
                 }))}
+              />
+              <OwoEmojiPicker
+                onInsert={(ph) => setText((t) => t + ph)}
               />
               <Button 
                 type="text"
