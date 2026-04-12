@@ -4,6 +4,7 @@ import React from 'react';
 import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
 import MobileTabBar from './components/MobileTabBar';
 import Navbar from './components/Navbar';
+import SiteFooter from './components/SiteFooter';
 import RequireAuth from './components/RequireAuth';
 import { LoginModalProvider } from './context/LoginModalContext';
 import Create from './pages/Create';
@@ -16,6 +17,7 @@ import Profile from './pages/Profile';
 import ProjectDetail from './pages/ProjectDetail';
 import SearchPage from './pages/Search';
 import Settings from './pages/Settings';
+import About from './pages/About';
 
 const { useBreakpoint } = Grid;
 
@@ -36,18 +38,27 @@ const App: React.FC = () => {
       future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <LoginModalProvider>
-        <div style={{
-          minHeight: '100vh',
-          background: token.colorBgLayout,
-          color: token.colorText,
-          transition: 'background-color 0.3s, color 0.3s'
-        }}>
+        <div
+          style={{
+            minHeight: '100vh',
+            background: token.colorBgLayout,
+            color: token.colorText,
+            transition: 'background-color 0.3s, color 0.3s',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
           <Navbar />
-          <main style={{
-            maxWidth: 680,
-            margin: '0 auto',
-            padding: screens.md ? '80px 16px 24px' : '80px 16px 80px',
-          }}>
+          <main
+            style={{
+              flex: 1,
+              maxWidth: 680,
+              width: '100%',
+              margin: '0 auto',
+              padding: screens.md ? '80px 16px 24px' : '80px 16px 80px',
+              boxSizing: 'border-box',
+            }}
+          >
             <AnimatePresence mode="wait">
               <Routes>
                 <Route path="/" element={<Home />} />
@@ -61,10 +72,12 @@ const App: React.FC = () => {
                 <Route path="/create" element={<RequireAuth><Create /></RequireAuth>} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/search" element={<SearchPage />} />
+                <Route path="/about" element={<About />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </AnimatePresence>
           </main>
+          <SiteFooter />
           <MobileTabBar />
         </div>
       </LoginModalProvider>

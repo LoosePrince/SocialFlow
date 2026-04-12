@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Typography, Card, Switch, List, Button, Input, Form, Divider, App, Upload } from 'antd';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
-import { Moon, Save, LogOut, Camera } from 'lucide-react';
+import { Moon, Save, LogOut, Camera, Info } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { uploadToGithub } from '../github';
@@ -11,6 +12,7 @@ import { apiJson } from '../lib/api';
 const { Title, Text } = Typography;
 
 const Settings: React.FC = () => {
+  const navigate = useNavigate();
   const { user, profile, logout, refreshProfile } = useAuth();
   const { mode, toggleTheme } = useTheme();
   const [form] = Form.useForm();
@@ -109,11 +111,24 @@ const Settings: React.FC = () => {
         </Form>
       </Card>
       
-      <Title level={4} style={{ marginTop: 32 }}>应用偏好</Title>
+      <Title level={4} style={{ marginTop: 32 }}>应用</Title>
       <Card className="card" style={{ marginTop: 12 }}>
         <List itemLayout="horizontal">
           <List.Item actions={[<Switch checked={mode === 'dark'} onChange={toggleTheme} />]}>
-            <List.Item.Meta avatar={<Moon size={20}/>} title="深色模式" />
+            <List.Item.Meta avatar={<Moon size={20} />} title="深色模式" />
+          </List.Item>
+          <List.Item
+            extra={
+              <Button type="link" onClick={() => navigate('/about')}>
+                前往
+              </Button>
+            }
+          >
+            <List.Item.Meta
+              avatar={<Info size={20} />}
+              title="关于 SocialFlow"
+              description="技术栈、开源仓库、版权与友情链接"
+            />
           </List.Item>
         </List>
       </Card>
