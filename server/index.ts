@@ -188,6 +188,7 @@ app.post('/api/posts', authMiddleware, async (c) => {
   const me = meRows[0] as { role: string } | undefined;
   const isAdmin = me?.role === 'admin';
   const isrecommended = isAdmin && !!body.isrecommended;
+  const imageList = body.images ?? [];
 
   await sql`
     INSERT INTO posts (id, authorid, createdat, likecount, commentcount, isrecommended, content, images, type)
@@ -199,7 +200,7 @@ app.post('/api/posts', authMiddleware, async (c) => {
       0,
       ${isrecommended},
       ${body.content},
-      ${JSON.stringify(body.images ?? [])}::jsonb,
+      ${sql.array(imageList)},
       'post'
     )
   `;
@@ -218,17 +219,55 @@ app.patch('/api/posts/:id', authMiddleware, async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
   if (!id) return c.json({ error: 'Bad request' }, 400);
-  const body = await c.req.json<{ isrecommended?: boolean }>();
+  const body = await c.req.json<{
+    content?: string;
+    images?: string[];
+    isrecommended?: boolean;
+  }>();
+
   const postRows = await sql`SELECT authorid FROM posts WHERE id = ${id} LIMIT 1`;
   const post = postRows[0] as { authorid: string } | undefined;
   if (!post) return c.json({ error: 'Not found' }, 404);
+
   const profRows = await sql`SELECT role FROM profiles WHERE id = ${user.sub} LIMIT 1`;
   const prof = profRows[0] as { role: string } | undefined;
-  if (prof?.role !== 'admin') {
+  const isAdmin = prof?.role === 'admin';
+  const isAuthor = post.authorid === user.sub;
+  if (!isAdmin && !isAuthor) {
     return c.json({ error: 'Forbidden' }, 403);
   }
-  await sql`UPDATE posts SET isrecommended = ${body.isrecommended ?? false} WHERE id = ${id}`;
-  const [row] = await sql`SELECT * FROM posts WHERE id = ${id} LIMIT 1`;
+  if (body.isrecommended !== undefined && !isAdmin) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
+  const hasContent = body.content !== undefined;
+  const hasImages = body.images !== undefined;
+  const hasRec = body.isrecommended !== undefined;
+  if (!hasContent && !hasImages && !hasRec) {
+    return c.json({ error: 'No fields to update' }, 400);
+  }
+
+  if (hasContent) {
+    if (!body.content || !String(body.content).trim()) {
+      return c.json({ error: 'content cannot be empty' }, 400);
+    }
+    await sql`UPDATE posts SET content = ${body.content} WHERE id = ${id}`;
+  }
+  if (hasImages) {
+    await sql`UPDATE posts SET images = ${sql.array(body.images ?? [])} WHERE id = ${id}`;
+  }
+  if (hasRec && isAdmin) {
+    await sql`UPDATE posts SET isrecommended = ${body.isrecommended ?? false} WHERE id = ${id}`;
+  }
+
+  const [row] = await sql`
+    SELECT p.*,
+      json_build_object('displayname', pr.displayname, 'photourl', pr.photourl) AS profiles
+    FROM posts p
+    LEFT JOIN profiles pr ON pr.id = p.authorid
+    WHERE p.id = ${id}
+    LIMIT 1
+  `;
   return c.json(row);
 });
 
@@ -266,6 +305,7 @@ app.post('/api/projects', authMiddleware, async (c) => {
   const me = meRows[0] as { role: string } | undefined;
   const isAdmin = me?.role === 'admin';
   const isrecommended = isAdmin && !!body.isrecommended;
+  const attachmentList = body.attachments ?? [];
 
   await sql`
     INSERT INTO projects (id, authorid, createdat, likecount, commentcount, isrecommended, title, summary, content, coverurl, attachments, type)
@@ -280,7 +320,7 @@ app.post('/api/projects', authMiddleware, async (c) => {
       ${body.summary ?? ''},
       ${body.content},
       ${body.coverurl ?? ''},
-      ${JSON.stringify(body.attachments ?? [])}::jsonb,
+      ${sql.array(attachmentList)},
       'project'
     )
   `;
@@ -299,15 +339,73 @@ app.patch('/api/projects/:id', authMiddleware, async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
   if (!id) return c.json({ error: 'Bad request' }, 400);
-  const body = await c.req.json<{ isrecommended?: boolean }>();
+  const body = await c.req.json<{
+    title?: string;
+    summary?: string;
+    content?: string;
+    coverurl?: string;
+    attachments?: string[];
+    isrecommended?: boolean;
+  }>();
+
   const projRows = await sql`SELECT authorid FROM projects WHERE id = ${id} LIMIT 1`;
   const proj = projRows[0] as { authorid: string } | undefined;
   if (!proj) return c.json({ error: 'Not found' }, 404);
+
   const profRows = await sql`SELECT role FROM profiles WHERE id = ${user.sub} LIMIT 1`;
   const prof = profRows[0] as { role: string } | undefined;
-  if (prof?.role !== 'admin') return c.json({ error: 'Forbidden' }, 403);
-  await sql`UPDATE projects SET isrecommended = ${body.isrecommended ?? false} WHERE id = ${id}`;
-  const [row] = await sql`SELECT * FROM projects WHERE id = ${id} LIMIT 1`;
+  const isAdmin = prof?.role === 'admin';
+  const isAuthor = proj.authorid === user.sub;
+  if (!isAdmin && !isAuthor) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+  if (body.isrecommended !== undefined && !isAdmin) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
+  const hasTitle = body.title !== undefined;
+  const hasSummary = body.summary !== undefined;
+  const hasContent = body.content !== undefined;
+  const hasCover = body.coverurl !== undefined;
+  const hasAtt = body.attachments !== undefined;
+  const hasRec = body.isrecommended !== undefined;
+  if (!hasTitle && !hasSummary && !hasContent && !hasCover && !hasAtt && !hasRec) {
+    return c.json({ error: 'No fields to update' }, 400);
+  }
+
+  if (hasTitle) {
+    if (!body.title || !String(body.title).trim()) {
+      return c.json({ error: 'title cannot be empty' }, 400);
+    }
+    await sql`UPDATE projects SET title = ${body.title} WHERE id = ${id}`;
+  }
+  if (hasSummary) {
+    await sql`UPDATE projects SET summary = ${body.summary ?? ''} WHERE id = ${id}`;
+  }
+  if (hasContent) {
+    if (!body.content || !String(body.content).trim()) {
+      return c.json({ error: 'content cannot be empty' }, 400);
+    }
+    await sql`UPDATE projects SET content = ${body.content} WHERE id = ${id}`;
+  }
+  if (hasCover) {
+    await sql`UPDATE projects SET coverurl = ${body.coverurl ?? ''} WHERE id = ${id}`;
+  }
+  if (hasAtt) {
+    await sql`UPDATE projects SET attachments = ${sql.array(body.attachments ?? [])} WHERE id = ${id}`;
+  }
+  if (hasRec && isAdmin) {
+    await sql`UPDATE projects SET isrecommended = ${body.isrecommended ?? false} WHERE id = ${id}`;
+  }
+
+  const [row] = await sql`
+    SELECT p.*,
+      json_build_object('displayname', pr.displayname, 'photourl', pr.photourl) AS profiles
+    FROM projects p
+    LEFT JOIN profiles pr ON pr.id = p.authorid
+    WHERE p.id = ${id}
+    LIMIT 1
+  `;
   return c.json(row);
 });
 
@@ -485,6 +583,37 @@ app.post('/api/comments', authMiddleware, async (c) => {
   } else {
     await sql`UPDATE projects SET commentcount = ${nextCount} WHERE id = ${body.contentid}`;
   }
+
+  const [row] = await sql`
+    SELECT c.*,
+      json_build_object('displayname', pr.displayname, 'photourl', pr.photourl) AS profiles
+    FROM comments c
+    LEFT JOIN profiles pr ON pr.id = c.authorid
+    WHERE c.id = ${id}
+    LIMIT 1
+  `;
+  return c.json(row);
+});
+
+app.patch('/api/comments/:id', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const id = c.req.param('id');
+  if (!id) return c.json({ error: 'Bad request' }, 400);
+  const body = await c.req.json<{ text?: string }>();
+  if (!body.text || !String(body.text).trim()) {
+    return c.json({ error: 'text required' }, 400);
+  }
+
+  const profRows = await sql`SELECT role FROM profiles WHERE id = ${user.sub} LIMIT 1`;
+  const prof = profRows[0] as { role: string } | undefined;
+  if (prof?.role !== 'admin') {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
+  const comRows = await sql`SELECT id FROM comments WHERE id = ${id} LIMIT 1`;
+  if (!comRows.length) return c.json({ error: 'Not found' }, 404);
+
+  await sql`UPDATE comments SET text = ${body.text.trim()} WHERE id = ${id}`;
 
   const [row] = await sql`
     SELECT c.*,

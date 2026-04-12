@@ -101,7 +101,7 @@ const Search: React.FC = () => {
               <List
                 dataSource={filteredUsers}
                 renderItem={(u) => {
-                  const photo = u.photourl?.startsWith('http') ? u.photourl : getGithubUrl(u.photourl || '');
+                  const photo = getGithubUrl(u.photourl || '');
                   return (
                     <List.Item>
                       <List.Item.Meta

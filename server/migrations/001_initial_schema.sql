@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS public.posts (
   commentcount integer NOT NULL DEFAULT 0, -- 评论数缓存。
   isrecommended boolean NOT NULL DEFAULT false, -- 是否首页推荐（通常仅管理员可设）。
   content text NOT NULL, -- 正文（如 Markdown/纯文本，由应用约定）。
-  images jsonb NOT NULL DEFAULT '[]'::jsonb, -- 图片 URL 等 JSON 数组。
+  images text[] NOT NULL DEFAULT ARRAY[]::text[], -- 图片路径/URL 列表。
   type text NOT NULL DEFAULT 'post' -- 区分类型，当前多为 post。
 );
 
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS public.projects (
   summary text NOT NULL DEFAULT '', -- 摘要/简介。
   content text NOT NULL, -- 正文（常为 Markdown）。
   coverurl text NOT NULL DEFAULT '', -- 封面图 URL。
-  attachments jsonb NOT NULL DEFAULT '[]'::jsonb, -- 附件列表 JSON。
+  attachments text[] NOT NULL DEFAULT ARRAY[]::text[], -- 附件路径列表。
   type text NOT NULL DEFAULT 'project' -- 固定为 project。
 );
 

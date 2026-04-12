@@ -22,29 +22,52 @@ function cdnPairFromRepoPath(
 }
 
 /**
- * 将相对路径、raw GitHub、jsDelivr、osyb 等地址统一为 jsDelivr（主）与 jsdmirror（备）。
- * 非上述 GitHub 资源的外链保持 primary === fallback。
+ * 将任意已知的「仓库资源」输入统一为 jsDelivr（主）+ jsdmirror（备）。
+ * 不使用 raw.githubusercontent.com 作为输出；若输入为 raw 或 github.com/blob|raw，会解析后转为 CDN。
+ * 非 GitHub 托管的绝对 URL（如 Gravatar）原样返回。
  */
 export function resolveGithubCdnUrls(input: string): { primary: string; fallback: string } {
   const s = input?.trim() ?? '';
   if (!s) return { primary: '', fallback: '' };
 
   if (s.startsWith('http://') || s.startsWith('https://')) {
-    const raw = s.match(/^https?:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/i);
-    if (raw) {
-      const [, user, repo, branch, path] = raw;
+    const pathOnly = s.split(/[?#]/)[0];
+
+    const rawUserContent = pathOnly.match(
+      /^https?:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/i
+    );
+    if (rawUserContent) {
+      const [, user, repo, branch, pathEncoded] = rawUserContent;
+      const path = decodeURIComponent(pathEncoded.replace(/\+/g, ' '));
       return cdnPairFromRepoPath(user, repo, branch, path);
     }
-    const jsd = s.match(/^https?:\/\/cdn\.jsdelivr\.net\/gh\/([^/]+)\/([^@]+)@([^/]+)\/(.+)$/i);
+
+    const ghBlob = pathOnly.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/i);
+    if (ghBlob) {
+      const [, user, repo, branch, pathEncoded] = ghBlob;
+      const path = decodeURIComponent(pathEncoded.replace(/\+/g, ' '));
+      return cdnPairFromRepoPath(user, repo, branch, path);
+    }
+
+    const ghRawPath = pathOnly.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/raw\/([^/]+)\/(.+)$/i);
+    if (ghRawPath) {
+      const [, user, repo, branch, pathEncoded] = ghRawPath;
+      const path = decodeURIComponent(pathEncoded.replace(/\+/g, ' '));
+      return cdnPairFromRepoPath(user, repo, branch, path);
+    }
+
+    const jsd = pathOnly.match(/^https?:\/\/cdn\.jsdelivr\.net\/gh\/([^/]+)\/([^@]+)@([^/]+)\/(.+)$/i);
     if (jsd) {
       const [, user, repo, branch, path] = jsd;
       return cdnPairFromRepoPath(user, repo, branch, path);
     }
-    const jsdmirror = s.match(/^https?:\/\/cdn\.jsdmirror\.com\/gh\/([^/]+)\/([^@]+)@([^/]+)\/(.+)$/i);
+
+    const jsdmirror = pathOnly.match(/^https?:\/\/cdn\.jsdmirror\.com\/gh\/([^/]+)\/([^@]+)@([^/]+)\/(.+)$/i);
     if (jsdmirror) {
       const [, user, repo, branch, path] = jsdmirror;
       return cdnPairFromRepoPath(user, repo, branch, path);
     }
+
     return { primary: s, fallback: s };
   }
 
@@ -56,8 +79,7 @@ export function resolveGithubCdnUrls(input: string): { primary: string; fallback
   return cdnPairFromRepoPath(user, repo, DEFAULT_BRANCH, path);
 }
 
-/** 展示用主 CDN（jsDelivr）；加载失败或超时请配合 useGithubCdnSrc / GithubCdnAvatar / GithubCdnImg */
-export const getGithubUrl = (relativePath: string) => {
-  if (!relativePath) return '';
-  return resolveGithubCdnUrls(relativePath).primary;
-};
+/**
+ * 展示用主 CDN URL（jsDelivr）。请始终通过本函数处理头像、封面、图床路径及历史里存过的 raw/blob 链接。
+ */
+export const getGithubUrl = (pathOrUrl: string) => resolveGithubCdnUrls(pathOrUrl).primary;

@@ -7,7 +7,8 @@ import { Typography, Button, Tag, Divider, Flex, theme, Card, Grid } from 'antd'
 import { ProjectDetailPageSkeleton } from '../components/PageSkeletons';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
 import { GithubCdnImg } from '../components/GithubCdnImg';
-import { ArrowLeft, Clock, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Clock, ExternalLink, Pencil } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { getGithubUrl } from '../github';
 import CommentSection from '../components/CommentSection';
 import dayjs from 'dayjs';
@@ -21,10 +22,12 @@ const { useBreakpoint } = Grid;
 const ProjectDetail: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user, isAdmin } = useAuth();
   const [project, setProject] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const { token } = theme.useToken();
   const screens = useBreakpoint();
+  const canEditProject = project && (isAdmin || user?.id === project.authorid);
 
   const markdownComponents = useMemo<Components>(
     () => ({
@@ -169,7 +172,7 @@ const ProjectDetail: React.FC = () => {
         setProject({
           ...data,
           authorName: data.profiles?.displayname,
-          authorPhoto: authorPhoto.startsWith('http') ? authorPhoto : getGithubUrl(authorPhoto),
+          authorPhoto: getGithubUrl(authorPhoto),
           coverUrl: data.coverurl ? getGithubUrl(data.coverurl) : '',
           attachments: (data.attachments as string[] || []).map(getGithubUrl),
         });
@@ -203,14 +206,26 @@ const ProjectDetail: React.FC = () => {
         margin: '0 auto' 
       }}
     >
-      <Button 
-        type="text"
-        icon={<ArrowLeft size={16}/>} 
-        onClick={() => navigate(-1)} 
-        style={{ marginBottom: 16, color: token.colorTextSecondary }}
-      >
-        返回
-      </Button>
+      <Flex justify="space-between" align="center" style={{ marginBottom: 16 }} wrap="wrap" gap={8}>
+        <Button
+          type="text"
+          icon={<ArrowLeft size={16} />}
+          onClick={() => navigate(-1)}
+          style={{ color: token.colorTextSecondary }}
+        >
+          返回
+        </Button>
+        {canEditProject && (
+          <Button
+            color="primary"
+            variant="outlined"
+            icon={<Pencil size={16} strokeWidth={2} />}
+            onClick={() => navigate(`/create?edit=${encodeURIComponent(project.id)}&type=project`)}
+          >
+            编辑
+          </Button>
+        )}
+      </Flex>
       
       <Card 
         variant="borderless"

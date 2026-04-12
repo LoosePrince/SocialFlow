@@ -2,7 +2,7 @@ import React from 'react';
 import { Card, Tag, Space, Button, App, Popover, Flex, Typography, theme } from 'antd';
 import { GithubCdnAvatar } from './GithubCdnAvatar';
 import { GithubCdnImg } from './GithubCdnImg';
-import { Rocket, Clock, MessageSquare, MoreHorizontal, ShieldCheck } from 'lucide-react';
+import { Rocket, Clock, MessageSquare, MoreHorizontal, ShieldCheck, Pencil } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { apiJson } from '../lib/api';
@@ -105,6 +105,17 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
             placement="topRight"
             content={
               <Flex vertical gap={4}>
+                <Button
+                  type="text"
+                  icon={<Pencil size={14} />}
+                  style={{ textAlign: 'left' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(`/create?edit=${encodeURIComponent(project.id)}&type=project`);
+                  }}
+                >
+                  编辑
+                </Button>
                 {isAdmin && (
                   <Button type="text" onClick={toggleRecommendation} style={{ textAlign: 'left' }}>
                     {project.isrecommended ? '取消推荐' : '推荐到首页'}

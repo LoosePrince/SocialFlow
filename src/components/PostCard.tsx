@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Space, Button, Popover, App, Flex, Typography, theme, Card, Modal } from 'antd';
 import { GithubCdnAvatar } from './GithubCdnAvatar';
 import SmartFeedImage from './SmartFeedImage';
-import { Heart, MessageCircle, Share2, MoreHorizontal, ShieldCheck, Trash2 } from 'lucide-react';
+import { Heart, MessageCircle, Share2, MoreHorizontal, ShieldCheck, Trash2, Pencil } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -118,6 +118,14 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
             placement="bottomRight"
             content={
               <Flex vertical gap={4}>
+                <Button
+                  type="text"
+                  icon={<Pencil size={14} />}
+                  style={{ textAlign: 'left' }}
+                  onClick={() => navigate(`/create?edit=${encodeURIComponent(post.id)}&type=post`)}
+                >
+                  编辑
+                </Button>
                 {isAdmin && (
                   <Button type="text" onClick={toggleRecommendation} style={{ textAlign: 'left' }}>
                     {post.isrecommended ? '取消推荐' : '推荐到首页'}

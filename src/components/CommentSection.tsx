@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Button, List, Space, Modal, App, Mentions, Flex, Typography, theme, Avatar } from 'antd';
+import { Button, List, Space, Modal, App, Mentions, Flex, Typography, theme, Avatar, Input } from 'antd';
 import { GithubCdnAvatar } from './GithubCdnAvatar';
 import LikeList from './LikeList';
 import { useNavigate } from 'react-router-dom';
-import { Send, MessageSquare, MessageCircle, Trash2, Heart, User } from 'lucide-react';
+import { Send, MessageSquare, MessageCircle, Trash2, Heart, User, Pencil } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useUsers } from '../hooks/useUsers';
 import { getGithubUrl } from '../github';
@@ -38,6 +38,9 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
   const [likeCount, setLikeCount] = useState(0);
   const [liked, setLiked] = useState(false);
   const [likeListNonce, setLikeListNonce] = useState(0);
+  const [editCommentId, setEditCommentId] = useState<string | null>(null);
+  const [editCommentText, setEditCommentText] = useState('');
+  const [savingCommentEdit, setSavingCommentEdit] = useState(false);
   const { users } = useUsers();
   const { message, modal } = App.useApp();
 
@@ -108,11 +111,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
         data.map((c) => ({
           ...c,
           authorName: c.profiles?.displayname,
-          authorPhoto: c.profiles?.photourl
-            ? c.profiles.photourl.startsWith('http')
-              ? c.profiles.photourl
-              : getGithubUrl(c.profiles.photourl)
-            : '',
+          authorPhoto: c.profiles?.photourl ? getGithubUrl(c.profiles.photourl) : '',
         }))
       );
     } catch {
@@ -171,6 +170,29 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
     }
   };
 
+  const openEditComment = (c: { id: string; text: string }) => {
+    setEditCommentId(c.id);
+    setEditCommentText(c.text);
+  };
+
+  const handleSaveCommentEdit = async () => {
+    if (!editCommentId || !editCommentText.trim()) return;
+    setSavingCommentEdit(true);
+    try {
+      await apiJson(`/api/comments/${editCommentId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ text: editCommentText.trim() }),
+      });
+      message.success('评论已更新');
+      setEditCommentId(null);
+      await fetchComments();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : '保存失败');
+    } finally {
+      setSavingCommentEdit(false);
+    }
+  };
+
   const handleDeleteComment = (commentId: string) => {
     modal.confirm({
       title: '确定要删除这条评论吗？',
@@ -191,6 +213,22 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
 
   return (
     <div style={{ background: token.colorBgContainer, borderRadius: token.borderRadiusLG, padding: 20 }}>
+      <Modal
+        title="编辑评论"
+        open={editCommentId !== null}
+        onOk={() => void handleSaveCommentEdit()}
+        onCancel={() => setEditCommentId(null)}
+        confirmLoading={savingCommentEdit}
+        okText="保存"
+        destroyOnClose
+      >
+        <Input.TextArea
+          rows={5}
+          value={editCommentText}
+          onChange={(e) => setEditCommentText(e.target.value)}
+          placeholder="修改评论内容"
+        />
+      </Modal>
       <div
         style={{
           marginBottom: 20,
@@ -355,6 +393,17 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
                     >
                       回复
                     </Button>
+                    {isAdmin && (
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<Pencil size={14} />}
+                        onClick={() => openEditComment(item)}
+                        style={{ padding: 0, width: 'fit-content' }}
+                      >
+                        编辑
+                      </Button>
+                    )}
                     {(isAdmin || user?.id === item.authorid) && (
                       <Button 
                         type="text" 
@@ -401,6 +450,17 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
                             >
                               回复
                             </Button>
+                            {isAdmin && (
+                              <Button
+                                type="text"
+                                size="small"
+                                icon={<Pencil size={12} />}
+                                onClick={() => openEditComment(reply)}
+                                style={{ padding: 0, width: 'fit-content' }}
+                              >
+                                编辑
+                              </Button>
+                            )}
                             {(isAdmin || user?.id === reply.authorid) && (
                               <Button 
                                 type="text" 

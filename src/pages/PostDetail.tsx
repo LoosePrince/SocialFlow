@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiJson } from '../lib/api';
-import { Typography, Button, App, Card, theme, Flex } from 'antd';
+import { Typography, Button, Card, theme, Flex } from 'antd';
 import { PostDetailPageSkeleton } from '../components/PageSkeletons';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
 import SmartFeedImage from '../components/SmartFeedImage';
-import { ArrowLeft, Clock } from 'lucide-react';
+import { ArrowLeft, Clock, Pencil } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { getGithubUrl } from '../github';
 import CommentSection from '../components/CommentSection';
 import dayjs from 'dayjs';
@@ -17,9 +18,11 @@ const { Title, Text, Paragraph } = Typography;
 const PostDetail: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user, isAdmin } = useAuth();
   const [post, setPost] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const { token } = theme.useToken();
+  const canEditPost = post && (isAdmin || user?.id === post.authorid);
 
   useEffect(() => {
     const fetchPost = async () => {
@@ -36,7 +39,7 @@ const PostDetail: React.FC = () => {
         setPost({
           ...data,
           authorName: data.profiles?.displayname,
-          authorPhoto: authorPhoto.startsWith('http') ? authorPhoto : getGithubUrl(authorPhoto),
+          authorPhoto: getGithubUrl(authorPhoto),
           images: (data.images as string[] || []).map(getGithubUrl),
         });
       } catch {
@@ -65,14 +68,26 @@ const PostDetail: React.FC = () => {
       animate={{ opacity: 1, y: 0 }}
       style={{ maxWidth: 680, margin: '0 auto' }}
     >
-      <Button 
-        type="text" 
-        icon={<ArrowLeft size={16}/>} 
-        onClick={() => navigate(-1)} 
-        style={{ marginBottom: 16, color: token.colorTextSecondary }}
-      >
-        返回
-      </Button>
+      <Flex justify="space-between" align="center" style={{ marginBottom: 16 }} wrap="wrap" gap={8}>
+        <Button
+          type="text"
+          icon={<ArrowLeft size={16} />}
+          onClick={() => navigate(-1)}
+          style={{ color: token.colorTextSecondary }}
+        >
+          返回
+        </Button>
+        {canEditPost && (
+          <Button
+            color="primary"
+            variant="outlined"
+            icon={<Pencil size={16} strokeWidth={2} />}
+            onClick={() => navigate(`/create?edit=${encodeURIComponent(post.id)}&type=post`)}
+          >
+            编辑
+          </Button>
+        )}
+      </Flex>
       
       <Card 
         variant="borderless"

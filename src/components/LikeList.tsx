@@ -35,11 +35,7 @@ const LikeList: React.FC<LikeListProps> = ({ contentId, contentType, alwaysShow,
           data.map((l) => ({
             ...l,
             userName: l.profiles?.displayname,
-            userPhoto: l.profiles?.photourl
-              ? l.profiles.photourl.startsWith('http')
-                ? l.profiles.photourl
-                : getGithubUrl(l.profiles.photourl)
-              : '',
+            userPhoto: l.profiles?.photourl ? getGithubUrl(l.profiles.photourl) : '',
           }))
         );
       } catch {

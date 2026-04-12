@@ -25,7 +25,7 @@ export const useFeeds = (showAll = false) => {
             coverurl,
             images,
             authorName: (item.profiles as { displayname?: string } | undefined)?.displayname,
-            authorPhoto: authorPhoto.startsWith('http') ? authorPhoto : getGithubUrl(authorPhoto),
+            authorPhoto: getGithubUrl(authorPhoto),
             createdAt: item.createdat,
             likeCount: item.likecount,
             commentCount: item.commentcount,
