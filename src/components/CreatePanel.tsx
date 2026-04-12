@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { App, Tabs, Form, Input, Upload, Button, Space, Typography, theme, Grid, Switch, Spin } from 'antd';
+import { App, Tabs, Form, Input, Upload, Button, Space, Typography, theme, Grid, Switch, Spin, Segmented, Flex, Divider } from 'antd';
 import type { UploadFile } from 'antd';
-import { ImagePlus, Type, FileText, Send, Projector } from 'lucide-react';
+import { ImagePlus, Type, FileText, Send, Projector, Eye } from 'lucide-react';
 import { uploadToGithub, getGithubUrl } from '../github';
 import { useAuth } from '../context/AuthContext';
 import { apiJson } from '../lib/api';
+import PostBodyDisplay from './PostBodyDisplay';
+import ProjectMarkdownContent from './ProjectMarkdownContent';
+import SmartFeedImage from './SmartFeedImage';
 
-const { Title, Paragraph } = Typography;
+const { Title, Paragraph, Text } = Typography;
 const { useBreakpoint } = Grid;
 
 type PathFile = UploadFile & { path?: string };
@@ -46,6 +49,8 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
   const [activeTab, setActiveTab] = useState<'post' | 'project'>(
     editTarget?.kind ?? 'post'
   );
+  const [postBodyMode, setPostBodyMode] = useState<'edit' | 'preview'>('edit');
+  const [projectBodyMode, setProjectBodyMode] = useState<'edit' | 'preview'>('edit');
   const { message } = App.useApp();
   const { token } = theme.useToken();
   const screens = useBreakpoint();
@@ -56,6 +61,16 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
       setActiveTab(editTarget.kind);
     }
   }, [editTarget]);
+
+  useEffect(() => {
+    setPostBodyMode('edit');
+    setProjectBodyMode('edit');
+  }, [activeTab]);
+
+  const watchedPostContent = Form.useWatch('content', postForm) as string | undefined;
+  const watchedProjectTitle = Form.useWatch('title', projectForm) as string | undefined;
+  const watchedProjectSummary = Form.useWatch('summary', projectForm) as string | undefined;
+  const watchedProjectContent = Form.useWatch('projectContent', projectForm) as string | undefined;
 
   useEffect(() => {
     if (!editTarget || !user) {
@@ -267,7 +282,38 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
               layout="vertical"
               requiredMark={false}
             >
-              <Form.Item name="content" rules={[{ required: true, message: '请输入动态内容' }]}>
+              <Flex justify="space-between" align="center" style={{ marginBottom: 10 }} wrap="wrap" gap={8}>
+                <Segmented
+                  size={isPageMobile ? 'large' : 'middle'}
+                  value={postBodyMode}
+                  onChange={(v) => setPostBodyMode(v as 'edit' | 'preview')}
+                  options={[
+                    {
+                      label: (
+                        <Space size={4}>
+                          <Type size={14} />
+                          编辑
+                        </Space>
+                      ),
+                      value: 'edit',
+                    },
+                    {
+                      label: (
+                        <Space size={4}>
+                          <Eye size={14} />
+                          预览
+                        </Space>
+                      ),
+                      value: 'preview',
+                    },
+                  ]}
+                />
+              </Flex>
+              <Form.Item
+                name="content"
+                rules={[{ required: true, message: '请输入动态内容' }]}
+                hidden={postBodyMode === 'preview'}
+              >
                 <Input.TextArea
                   placeholder="分享你现在的心情..."
                   rows={isPageMobile ? 6 : variant === 'page' ? 5 : 4}
@@ -279,6 +325,64 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                   }}
                 />
               </Form.Item>
+              {postBodyMode === 'preview' && (
+                <div
+                  style={{
+                    marginBottom: 16,
+                    padding: 12,
+                    borderRadius: token.borderRadius,
+                    border: `1px solid ${token.colorBorderSecondary}`,
+                    background: token.colorFillAlter,
+                    minHeight: 80,
+                  }}
+                >
+                  {watchedPostContent?.trim() ? (
+                    <PostBodyDisplay
+                      text={watchedPostContent}
+                      fontSize={isPageMobile ? 16 : 18}
+                    />
+                  ) : (
+                    <Text type="secondary">暂无正文，请在「编辑」中输入</Text>
+                  )}
+                  {postFileList.length > 0 && (
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(3, 1fr)',
+                        gap: 4,
+                        marginTop: 12,
+                        maxWidth: 400,
+                      }}
+                    >
+                      {postFileList.map((f) => {
+                        const pf = f as PathFile;
+                        const src =
+                          f.thumbUrl ||
+                          f.url ||
+                          (pf.path ? getGithubUrl(pf.path) : undefined);
+                        if (!src) return null;
+                        return (
+                          <div
+                            key={f.uid}
+                            style={{
+                              position: 'relative',
+                              width: '100%',
+                              minWidth: 0,
+                            }}
+                          >
+                            <SmartFeedImage
+                              src={src}
+                              alt=""
+                              layout="gridCell"
+                              preview={{ mask: null }}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
               <Form.Item label={isPageMobile ? '图片（最多 9 张）' : '图片 (最多9张)'}>
                 <div className={isPageMobile ? 'create-page-upload-scroll' : undefined}>
                   <Upload
@@ -338,15 +442,48 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
               layout="vertical"
               requiredMark={false}
             >
-              <Form.Item name="title" label="项目名称" rules={[{ required: true, message: '请填写项目标题' }]}>
+              <Flex justify="space-between" align="center" style={{ marginBottom: 10 }} wrap="wrap" gap={8}>
+                <Segmented
+                  size={isPageMobile ? 'large' : 'middle'}
+                  value={projectBodyMode}
+                  onChange={(v) => setProjectBodyMode(v as 'edit' | 'preview')}
+                  options={[
+                    {
+                      label: (
+                        <Space size={4}>
+                          <FileText size={14} />
+                          编辑
+                        </Space>
+                      ),
+                      value: 'edit',
+                    },
+                    {
+                      label: (
+                        <Space size={4}>
+                          <Eye size={14} />
+                          预览
+                        </Space>
+                      ),
+                      value: 'preview',
+                    },
+                  ]}
+                />
+              </Flex>
+              <Form.Item
+                name="title"
+                label="项目名称"
+                hidden={projectBodyMode === 'preview'}
+                rules={[{ required: true, message: '请填写项目标题' }]}
+              >
                 <Input placeholder="输入项目标题" size="large" style={inputFont} />
               </Form.Item>
-              <Form.Item name="summary" label="简短介绍">
+              <Form.Item name="summary" label="简短介绍" hidden={projectBodyMode === 'preview'}>
                 <Input.TextArea placeholder="简短的项目介绍" rows={isPageMobile ? 3 : 2} style={inputFont} />
               </Form.Item>
               <Form.Item
                 name="projectContent"
                 label="项目详情 (Markdown)"
+                hidden={projectBodyMode === 'preview'}
                 rules={[{ required: true, message: '请填写项目详情' }]}
               >
                 <Input.TextArea
@@ -355,6 +492,32 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                   style={{ ...inputFont, minHeight: isPageMobile ? 160 : undefined }}
                 />
               </Form.Item>
+              {projectBodyMode === 'preview' && (
+                <div
+                  style={{
+                    marginBottom: 20,
+                    padding: 16,
+                    borderRadius: token.borderRadiusLG,
+                    border: `1px solid ${token.colorBorderSecondary}`,
+                    background: token.colorFillAlter,
+                  }}
+                >
+                  <Title level={4} style={{ marginTop: 0 }}>
+                    {watchedProjectTitle?.trim() ? watchedProjectTitle : '（无标题）'}
+                  </Title>
+                  <Paragraph type="secondary" style={{ fontSize: isPageMobile ? 15 : 16, marginBottom: 12 }}>
+                    {watchedProjectSummary?.trim()
+                      ? watchedProjectSummary
+                      : '（暂无简介）'}
+                  </Paragraph>
+                  <Divider style={{ margin: '12px 0' }} />
+                  {watchedProjectContent?.trim() ? (
+                    <ProjectMarkdownContent markdown={watchedProjectContent} />
+                  ) : (
+                    <Text type="secondary">暂无详情正文，请在「编辑」中填写</Text>
+                  )}
+                </div>
+              )}
               <Form.Item label="资源列表（首张为封面图）">
                 <Upload
                   listType="picture"

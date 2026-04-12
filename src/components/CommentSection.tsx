@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Button, List, Space, Modal, App, Mentions, Flex, Typography, theme, Avatar, Input } from 'antd';
+import { Button, List, Space, Modal, App, Mentions, Flex, Typography, theme, Avatar, Input, Segmented } from 'antd';
 import { GithubCdnAvatar } from './GithubCdnAvatar';
 import LikeList from './LikeList';
 import { useNavigate } from 'react-router-dom';
@@ -42,6 +42,8 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
   const [editCommentId, setEditCommentId] = useState<string | null>(null);
   const [editCommentText, setEditCommentText] = useState('');
   const [savingCommentEdit, setSavingCommentEdit] = useState(false);
+  const [composeMode, setComposeMode] = useState<'edit' | 'preview'>('edit');
+  const [editCommentViewMode, setEditCommentViewMode] = useState<'edit' | 'preview'>('edit');
   const { users } = useUsers();
   const { message, modal } = App.useApp();
 
@@ -174,7 +176,12 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
   const openEditComment = (c: { id: string; text: string }) => {
     setEditCommentId(c.id);
     setEditCommentText(c.text);
+    setEditCommentViewMode('edit');
   };
+
+  useEffect(() => {
+    if (editCommentId === null) setEditCommentViewMode('edit');
+  }, [editCommentId]);
 
   const handleSaveCommentEdit = async () => {
     if (!editCommentId || !editCommentText.trim()) return;
@@ -223,18 +230,50 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
         okText="保存"
         destroyOnClose
       >
-        <Flex align="start" gap={8}>
-          <Input.TextArea
-            rows={5}
-            value={editCommentText}
-            onChange={(e) => setEditCommentText(e.target.value)}
-            placeholder="修改评论内容"
-            style={{ flex: 1 }}
+        <Flex vertical gap={10}>
+          <Segmented
+            size="middle"
+            value={editCommentViewMode}
+            onChange={(v) => setEditCommentViewMode(v as 'edit' | 'preview')}
+            block
+            options={[
+              { label: '编辑', value: 'edit' },
+              { label: '预览', value: 'preview' },
+            ]}
           />
-          <OwoEmojiPicker
-            buttonSize="middle"
-            onInsert={(ph) => setEditCommentText((t) => t + ph)}
-          />
+          {editCommentViewMode === 'edit' ? (
+            <Flex align="start" gap={8}>
+              <Input.TextArea
+                rows={5}
+                value={editCommentText}
+                onChange={(e) => setEditCommentText(e.target.value)}
+                placeholder="修改评论内容"
+                style={{ flex: 1 }}
+              />
+              <OwoEmojiPicker
+                buttonSize="middle"
+                onInsert={(ph) => setEditCommentText((t) => t + ph)}
+              />
+            </Flex>
+          ) : (
+            <div
+              style={{
+                minHeight: 120,
+                padding: '10px 12px',
+                borderRadius: token.borderRadius,
+                border: `1px solid ${token.colorBorderSecondary}`,
+                background: token.colorFillAlter,
+                lineHeight: 1.6,
+                color: token.colorText,
+              }}
+            >
+              {editCommentText.trim() ? (
+                <CommentText text={editCommentText} />
+              ) : (
+                <Text type="secondary">暂无内容</Text>
+              )}
+            </div>
+          )}
         </Flex>
       </Modal>
       <div
@@ -304,35 +343,74 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
             </Flex>
           )}
           {user ? (
-            <Flex align="end" gap={8} style={{ 
-              background: token.colorBgLayout, 
-              borderRadius: 12, 
-              padding: 8,
-              border: `1px solid ${token.colorBorderSecondary}`
-            }}>
-              <Mentions
-                placeholder="写下你的精彩评论..."
-                autoSize={{ minRows: 1, maxRows: 6 }}
-                value={text}
-                onChange={(val) => setText(val)}
-                style={{ flex: 1, border: 'none', background: 'transparent', boxShadow: 'none' }}
-                options={users.map(u => ({
-                  value: u.displayname,
-                  label: u.displayname,
-                  key: u.uid,
-                }))}
+            <Flex vertical gap={8} style={{ flex: 1 }}>
+              <Segmented
+                size="small"
+                value={composeMode}
+                onChange={(v) => setComposeMode(v as 'edit' | 'preview')}
+                options={[
+                  { label: '编辑', value: 'edit' },
+                  { label: '预览', value: 'preview' },
+                ]}
+                style={{ alignSelf: 'flex-start' }}
               />
-              <OwoEmojiPicker
-                onInsert={(ph) => setText((t) => t + ph)}
-              />
-              <Button 
-                type="text"
-                icon={<Send size={20} />} 
-                onClick={handleSubmit}
-                loading={submitting}
-                disabled={!text.trim()}
-                style={{ color: token.colorPrimary }}
-              />
+              <Flex
+                align="end"
+                gap={8}
+                style={{
+                  background: token.colorBgLayout,
+                  borderRadius: 12,
+                  padding: 8,
+                  border: `1px solid ${token.colorBorderSecondary}`,
+                }}
+              >
+                {composeMode === 'edit' ? (
+                  <>
+                    <Mentions
+                      placeholder="写下你的精彩评论..."
+                      autoSize={{ minRows: 1, maxRows: 6 }}
+                      value={text}
+                      onChange={(val) => setText(val)}
+                      style={{
+                        flex: 1,
+                        border: 'none',
+                        background: 'transparent',
+                        boxShadow: 'none',
+                      }}
+                      options={users.map((u) => ({
+                        value: u.displayname,
+                        label: u.displayname,
+                        key: u.uid,
+                      }))}
+                    />
+                    <OwoEmojiPicker onInsert={(ph) => setText((t) => t + ph)} />
+                  </>
+                ) : (
+                  <div
+                    style={{
+                      flex: 1,
+                      minHeight: 40,
+                      padding: '4px 0',
+                      lineHeight: 1.6,
+                      color: token.colorText,
+                    }}
+                  >
+                    {text.trim() ? (
+                      <CommentText text={text} />
+                    ) : (
+                      <Text type="secondary">暂无内容</Text>
+                    )}
+                  </div>
+                )}
+                <Button
+                  type="text"
+                  icon={<Send size={20} />}
+                  onClick={handleSubmit}
+                  loading={submitting}
+                  disabled={!text.trim()}
+                  style={{ color: token.colorPrimary }}
+                />
+              </Flex>
             </Flex>
           ) : (
             <div
