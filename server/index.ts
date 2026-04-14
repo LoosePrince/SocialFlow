@@ -18,6 +18,7 @@ import { uploadBufferToGithub } from './githubUpload.js';
 import { queryQqScanStatus, requestQqLoginCode } from './qqDevToolAuth.js';
 import { issueSupabaseSessionForEmail } from './supabaseIssueSession.js';
 import { hashPassword, validatePasswordStrength, verifyPassword } from './passwordAuth.js';
+import { getPushPublicKey, isPushEnabled, sendWebPush } from './push.js';
 
 const PORT = Number(process.env.PORT) || 8787;
 
@@ -82,6 +83,22 @@ const notifySettingMap: Record<NotifyType, { receive: keyof NotificationSettings
     mention: { receive: 'receive_mention', alert: 'alert_mention' },
   };
 
+let notificationHasFromUserIdColumn: boolean | null = null;
+
+async function hasNotificationFromUserIdColumn() {
+  if (notificationHasFromUserIdColumn !== null) return notificationHasFromUserIdColumn;
+  const rows = await sql`
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'notifications'
+      AND column_name = 'fromuserid'
+    LIMIT 1
+  `;
+  notificationHasFromUserIdColumn = rows.length > 0;
+  return notificationHasFromUserIdColumn;
+}
+
 async function ensureNotificationSettings(userId: string): Promise<NotificationSettingsRow> {
   const rows = await sql`
     INSERT INTO notification_settings (userid)
@@ -96,6 +113,7 @@ async function ensureNotificationSettings(userId: string): Promise<NotificationS
 
 async function emitNotification(params: {
   toUserId: string;
+  fromUserId?: string;
   fromUserName: string;
   type: NotifyType;
   eventKey: string;
@@ -104,7 +122,7 @@ async function emitNotification(params: {
   contentType?: 'post' | 'project' | null;
   payload?: Record<string, unknown>;
 }) {
-  const { toUserId, fromUserName, type, eventKey, commentText, contentId, contentType, payload } = params;
+  const { toUserId, fromUserId, fromUserName, type, eventKey, commentText, contentId, contentType, payload } = params;
   if (!toUserId || !eventKey) return;
 
   const settings = await ensureNotificationSettings(toUserId);
@@ -113,26 +131,85 @@ async function emitNotification(params: {
   if (!receive) return;
   const isAlert = Boolean(settings[keys.alert]);
 
-  await sql`
-    INSERT INTO notifications (id, touserid, fromusername, commenttext, contentid, contenttype, type, isread, createdat, eventkey, isalert, payload)
-    VALUES (
-      ${crypto.randomUUID()},
-      ${toUserId},
-      ${fromUserName},
-      ${commentText ?? ''},
-      ${contentId ?? null},
-      ${contentType ?? null},
-      ${type},
-      ${!isAlert},
-      ${Date.now()},
-      ${eventKey},
-      ${isAlert},
-      ${JSON.stringify(payload ?? {})}::jsonb
-    )
-    ON CONFLICT (touserid, type, eventkey)
-    WHERE eventkey <> ''
-    DO NOTHING
-  `;
+  const hasFromUserId = await hasNotificationFromUserIdColumn();
+  if (hasFromUserId) {
+    await sql`
+      INSERT INTO notifications (id, touserid, fromuserid, fromusername, commenttext, contentid, contenttype, type, isread, createdat, eventkey, isalert, payload)
+      VALUES (
+        ${crypto.randomUUID()},
+        ${toUserId},
+        ${fromUserId ?? toUserId},
+        ${fromUserName},
+        ${commentText ?? ''},
+        ${contentId ?? null},
+        ${contentType ?? null},
+        ${type},
+        ${!isAlert},
+        ${Date.now()},
+        ${eventKey},
+        ${isAlert},
+        ${JSON.stringify(payload ?? {})}::jsonb
+      )
+      ON CONFLICT (touserid, type, eventkey)
+      WHERE eventkey <> ''
+      DO NOTHING
+    `;
+  } else {
+    await sql`
+      INSERT INTO notifications (id, touserid, fromusername, commenttext, contentid, contenttype, type, isread, createdat, eventkey, isalert, payload)
+      VALUES (
+        ${crypto.randomUUID()},
+        ${toUserId},
+        ${fromUserName},
+        ${commentText ?? ''},
+        ${contentId ?? null},
+        ${contentType ?? null},
+        ${type},
+        ${!isAlert},
+        ${Date.now()},
+        ${eventKey},
+        ${isAlert},
+        ${JSON.stringify(payload ?? {})}::jsonb
+      )
+      ON CONFLICT (touserid, type, eventkey)
+      WHERE eventkey <> ''
+      DO NOTHING
+    `;
+  }
+
+  if (!isAlert || !isPushEnabled()) return;
+
+  const subscriptions = (await sql`
+    SELECT endpoint, p256dh, auth
+    FROM push_subscriptions
+    WHERE userid = ${toUserId}
+  `) as Array<{ endpoint: string; p256dh: string; auth: string }>;
+  if (subscriptions.length === 0) return;
+
+  const typeTextMap: Record<NotifyType, string> = {
+    recommend: '推荐了你的内容',
+    like: '点赞了你的内容',
+    comment: '评论了你的内容',
+    reply: '回复了你的评论',
+    delete: '管理员删除了你的内容',
+    mention: '@了你',
+  };
+  const title = fromUserName ? `${fromUserName} ${typeTextMap[type]}` : typeTextMap[type];
+  const bodyText = (commentText ?? '').trim() || '点击查看详情';
+  const url =
+    contentId && contentType
+      ? `${contentType === 'post' ? '/post/' : '/project/'}${contentId}`
+      : '/messages';
+
+  const invalidEndpoints = await sendWebPush(subscriptions, {
+    title,
+    body: bodyText,
+    url,
+    tag: `sf-${type}-${eventKey}`,
+  });
+  if (invalidEndpoints.length > 0) {
+    await sql`DELETE FROM push_subscriptions WHERE endpoint = ANY(${sql.array(invalidEndpoints)})`;
+  }
 }
 
 app.use(
@@ -401,6 +478,55 @@ app.patch('/api/notification-settings', authMiddleware, async (c) => {
   return c.json(rows[0] as NotificationSettingsRow);
 });
 
+// ---------- web push ----------
+app.get('/api/push/public-key', authMiddleware, async (c) => {
+  if (!isPushEnabled()) {
+    return c.json({ enabled: false, publicKey: '' });
+  }
+  return c.json({ enabled: true, publicKey: getPushPublicKey() });
+});
+
+app.post('/api/push/subscribe', authMiddleware, async (c) => {
+  const user = c.get('user');
+  if (!isPushEnabled()) return c.json({ error: 'Push unavailable' }, 503);
+
+  const body = await c.req.json<{
+    subscription?: {
+      endpoint?: string;
+      keys?: { p256dh?: string; auth?: string };
+    };
+  }>();
+  const endpoint = body.subscription?.endpoint?.trim() ?? '';
+  const p256dh = body.subscription?.keys?.p256dh?.trim() ?? '';
+  const auth = body.subscription?.keys?.auth?.trim() ?? '';
+  if (!endpoint || !p256dh || !auth) {
+    return c.json({ error: 'Invalid subscription' }, 400);
+  }
+
+  const now = Date.now();
+  const ua = c.req.header('User-Agent') ?? '';
+  await sql`
+    INSERT INTO push_subscriptions (endpoint, userid, p256dh, auth, useragent, createdat, updatedat)
+    VALUES (${endpoint}, ${user.sub}, ${p256dh}, ${auth}, ${ua}, ${now}, ${now})
+    ON CONFLICT (endpoint) DO UPDATE SET
+      userid = EXCLUDED.userid,
+      p256dh = EXCLUDED.p256dh,
+      auth = EXCLUDED.auth,
+      useragent = EXCLUDED.useragent,
+      updatedat = EXCLUDED.updatedat
+  `;
+  return c.json({ ok: true });
+});
+
+app.post('/api/push/unsubscribe', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json<{ endpoint?: string }>();
+  const endpoint = body.endpoint?.trim() ?? '';
+  if (!endpoint) return c.json({ error: 'endpoint required' }, 400);
+  await sql`DELETE FROM push_subscriptions WHERE endpoint = ${endpoint} AND userid = ${user.sub}`;
+  return c.json({ ok: true });
+});
+
 // ---------- feeds ----------
 app.get('/api/feeds', async (c) => {
   const showAll = c.req.query('showAll') === 'true' || c.req.query('showAll') === '1';
@@ -603,6 +729,7 @@ app.patch('/api/posts/:id', authMiddleware, async (c) => {
     if (body.isrecommended === true && !post.isrecommended && post.authorid !== user.sub) {
       await emitNotification({
         toUserId: post.authorid,
+        fromUserId: user.sub,
         fromUserName: prof?.displayname ?? '管理员',
         type: 'recommend',
         eventKey: `recommend:post:${id}`,
@@ -639,6 +766,7 @@ app.delete('/api/posts/:id', authMiddleware, async (c) => {
   if (prof?.role === 'admin' && post.authorid !== user.sub) {
     await emitNotification({
       toUserId: post.authorid,
+      fromUserId: user.sub,
       fromUserName: prof.displayname ?? '管理员',
       type: 'delete',
       eventKey: `delete:post:${id}`,
@@ -771,6 +899,7 @@ app.patch('/api/projects/:id', authMiddleware, async (c) => {
     if (body.isrecommended === true && !proj.isrecommended && proj.authorid !== user.sub) {
       await emitNotification({
         toUserId: proj.authorid,
+        fromUserId: user.sub,
         fromUserName: prof?.displayname ?? '管理员',
         type: 'recommend',
         eventKey: `recommend:project:${id}`,
@@ -807,6 +936,7 @@ app.delete('/api/projects/:id', authMiddleware, async (c) => {
   if (prof?.role === 'admin' && proj.authorid !== user.sub) {
     await emitNotification({
       toUserId: proj.authorid,
+      fromUserId: user.sub,
       fromUserName: prof.displayname ?? '管理员',
       type: 'delete',
       eventKey: `delete:project:${id}`,
@@ -913,6 +1043,7 @@ app.post('/api/likes/toggle', authMiddleware, async (c) => {
   if (target?.authorid && target.authorid !== user.sub) {
     await emitNotification({
       toUserId: target.authorid,
+      fromUserId: user.sub,
       fromUserName: actor?.displayname ?? '',
       type: 'like',
       eventKey: `like:${contentType}:${contentId}:from:${user.sub}`,
@@ -1020,6 +1151,7 @@ app.post('/api/comments', authMiddleware, async (c) => {
     if (parent?.authorid && parent.authorid !== user.sub) {
       await emitNotification({
         toUserId: parent.authorid,
+        fromUserId: user.sub,
         fromUserName: actorName,
         type: 'reply',
         eventKey: `reply:${id}:to:${parent.authorid}`,
@@ -1032,6 +1164,7 @@ app.post('/api/comments', authMiddleware, async (c) => {
   } else if (content?.authorid && content.authorid !== user.sub) {
     await emitNotification({
       toUserId: content.authorid,
+      fromUserId: user.sub,
       fromUserName: actorName,
       type: 'comment',
       eventKey: `comment:${id}:to:${content.authorid}`,
@@ -1045,6 +1178,7 @@ app.post('/api/comments', authMiddleware, async (c) => {
     if (mentionedUserId === user.sub) continue;
     await emitNotification({
       toUserId: mentionedUserId,
+      fromUserId: user.sub,
       fromUserName: actorName,
       type: 'mention',
       eventKey: `mention:${id}:to:${mentionedUserId}`,

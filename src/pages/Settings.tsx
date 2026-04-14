@@ -12,6 +12,12 @@ import { useTheme } from '../context/ThemeContext';
 import { useI18n } from '../context/I18nContext';
 import { uploadToGithub } from '../github';
 import { apiJson } from '../lib/api';
+import {
+  getPermissionState,
+  isPushSupported,
+  registerPushSubscription,
+  unregisterPushSubscription,
+} from '../lib/browserPush';
 
 const { Title, Text } = Typography;
 
@@ -26,6 +32,11 @@ const Settings: React.FC = () => {
   const [qqModalOpen, setQqModalOpen] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [notifyModalOpen, setNotifyModalOpen] = useState(false);
+  const [pushLoading, setPushLoading] = useState(false);
+  const [pushSupported, setPushSupported] = useState(false);
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | 'unsupported'>(
+    'default'
+  );
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [hasPassword, setHasPassword] = useState<boolean>(false);
   const { message } = App.useApp();
@@ -57,6 +68,16 @@ const Settings: React.FC = () => {
       void fetchPasswordStatus();
     }
   }, [fetchPasswordStatus, user]);
+
+  useEffect(() => {
+    const loadPushState = async () => {
+      const supported = await isPushSupported();
+      setPushSupported(supported);
+      const permission = await getPermissionState();
+      setPushPermission(permission);
+    };
+    void loadPushState();
+  }, []);
 
   const handleUpdateProfile = async (values: any) => {
     if (!user) return;
@@ -115,6 +136,38 @@ const Settings: React.FC = () => {
       message.error(error.message || t('settings.passwordSaveFailed'));
     } finally {
       setPasswordSaving(false);
+    }
+  };
+
+  const handleEnablePush = async () => {
+    setPushLoading(true);
+    try {
+      await registerPushSubscription();
+      setPushPermission(await getPermissionState());
+      message.success(t('settings.pushEnabled'));
+    } catch (error: any) {
+      const code = error?.message ?? '';
+      if (code === 'permission-denied') {
+        message.error(t('settings.pushPermissionDenied'));
+      } else if (code === 'push-unavailable') {
+        message.error(t('settings.pushUnavailable'));
+      } else {
+        message.error(t('settings.pushEnableFailed'));
+      }
+    } finally {
+      setPushLoading(false);
+    }
+  };
+
+  const handleDisablePush = async () => {
+    setPushLoading(true);
+    try {
+      await unregisterPushSubscription();
+      message.success(t('settings.pushDisabled'));
+    } catch {
+      message.error(t('settings.pushDisableFailed'));
+    } finally {
+      setPushLoading(false);
     }
   };
 
@@ -235,6 +288,29 @@ const Settings: React.FC = () => {
               avatar={<Languages size={20} />}
               title={t('settings.language.title')}
               description={t('settings.language.description')}
+            />
+          </List.Item>
+          <List.Item
+            extra={
+              <Button
+                onClick={() => void (pushPermission === 'granted' ? handleDisablePush() : handleEnablePush())}
+                loading={pushLoading}
+                disabled={!pushSupported}
+              >
+                {pushPermission === 'granted' ? t('settings.pushDisable') : t('settings.pushEnable')}
+              </Button>
+            }
+          >
+            <List.Item.Meta
+              avatar={<Bell size={20} />}
+              title={t('settings.pushTitle')}
+              description={
+                !pushSupported
+                  ? t('settings.pushUnsupported')
+                  : pushPermission === 'granted'
+                    ? t('settings.pushStatusEnabled')
+                    : t('settings.pushStatusDisabled')
+              }
             />
           </List.Item>
           <List.Item
