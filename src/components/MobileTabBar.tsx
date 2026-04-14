@@ -3,6 +3,7 @@ import { TabBar } from 'antd-mobile';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Home, Search, PlusSquare, MessageCircle, User } from 'lucide-react';
 import { theme, Grid } from 'antd';
+import { useI18n } from '../context/I18nContext';
 
 const { useBreakpoint } = Grid;
 
@@ -11,13 +12,14 @@ const MobileTabBar: React.FC = () => {
   const location = useLocation();
   const { token } = theme.useToken();
   const screens = useBreakpoint();
+  const { t } = useI18n();
 
   const tabs = [
-    { key: '/', title: '首页', icon: <Home size={22} /> },
-    { key: '/search', title: '探索', icon: <Search size={22} /> },
-    { key: '/create', title: '发布', icon: <PlusSquare size={24} /> },
-    { key: '/messages', title: '消息', icon: <MessageCircle size={22} /> },
-    { key: '/profile', title: '我', icon: <User size={22} /> },
+    { key: '/', title: t('tabs.home'), icon: <Home size={22} /> },
+    { key: '/search', title: t('tabs.search'), icon: <Search size={22} /> },
+    { key: '/create', title: t('tabs.create'), icon: <PlusSquare size={24} /> },
+    { key: '/messages', title: t('tabs.messages'), icon: <MessageCircle size={22} /> },
+    { key: '/profile', title: t('tabs.me'), icon: <User size={22} /> },
   ];
 
   if (screens.md) return null;

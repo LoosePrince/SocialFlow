@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Typography, Card, Switch, List, Button, Input, Form, Divider, App, Upload, Modal } from 'antd';
+import { Typography, Card, Switch, List, Button, Input, Form, Divider, App, Upload, Modal, Select } from 'antd';
 import { QqOutlined } from '@ant-design/icons';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
 import QqQrModal from '../components/QqQrModal';
-import { Moon, Save, LogOut, Camera, Info, KeyRound } from 'lucide-react';
+import { Moon, Save, LogOut, Camera, Info, KeyRound, Languages } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useI18n } from '../context/I18nContext';
 import { uploadToGithub } from '../github';
 import { apiJson } from '../lib/api';
 
@@ -17,6 +18,7 @@ const Settings: React.FC = () => {
   const navigate = useNavigate();
   const { user, profile, logout, refreshProfile } = useAuth();
   const { mode, toggleTheme } = useTheme();
+  const { locale, setLocale, t, availableLocales } = useI18n();
   const [form] = Form.useForm();
   const [passwordForm] = Form.useForm();
   const [loading, setLoading] = useState(false);
@@ -66,9 +68,9 @@ const Settings: React.FC = () => {
         }),
       });
       await refreshProfile();
-      message.success('个人资料已更新');
+      message.success(t('settings.updateSuccess'));
     } catch (error: any) {
-      message.error(`更新失败: ${error.message}`);
+      message.error(`${t('settings.updateFailed')} ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -83,9 +85,9 @@ const Settings: React.FC = () => {
         contentId: user.id,
       });
       form.setFieldsValue({ photourl: relativePath });
-      message.success('头像已上传，请点击保存修改');
+      message.success(t('settings.avatarUploadSuccess'));
     } catch (e: any) {
-      message.error('头像上传失败');
+      message.error(t('settings.avatarUploadFailed'));
     } finally {
       setLoading(false);
     }
@@ -106,9 +108,9 @@ const Settings: React.FC = () => {
       });
       setHasPassword(true);
       setPasswordModalOpen(false);
-      message.success(hasPassword ? '密码已更新' : '密码已设置');
+      message.success(hasPassword ? t('settings.passwordUpdated') : t('settings.passwordSet'));
     } catch (error: any) {
-      message.error(error.message || '保存密码失败');
+      message.error(error.message || t('settings.passwordSaveFailed'));
     } finally {
       setPasswordSaving(false);
     }
@@ -121,9 +123,9 @@ const Settings: React.FC = () => {
       animate={{ opacity: 1, y: 0 }}
       style={{ paddingBottom: 100 }}
     >
-      <Title level={2}>设置</Title>
+      <Title level={2}>{t('settings.title')}</Title>
       
-      <Title level={4} style={{ marginTop: 32 }}>个人资料</Title>
+      <Title level={4} style={{ marginTop: 32 }}>{t('settings.profile')}</Title>
       <Card className="card" style={{ marginTop: 12 }}>
         <Form form={form} layout="vertical" onFinish={handleUpdateProfile}>
           <div style={{ display: 'flex', gap: 24, alignItems: 'center', marginBottom: 24 }}>
@@ -143,43 +145,43 @@ const Settings: React.FC = () => {
               </Upload>
             </div>
             <div style={{ flex: 1 }}>
-              <Text type="secondary">用户 ID: {user?.id}</Text>
+              <Text type="secondary">{t('settings.userId')} {user?.id}</Text>
               <br />
-              <Text type="secondary">注册邮箱: {user?.email}</Text>
+              <Text type="secondary">{t('settings.registeredEmail')} {user?.email}</Text>
             </div>
           </div>
           
-          <Form.Item name="displayname" label="昵称" rules={[{ required: true, message: '请输入昵称' }]}>
-            <Input placeholder="你的公开昵称" size="large" />
+          <Form.Item name="displayname" label={t('settings.nickname')} rules={[{ required: true, message: t('settings.nicknameRequired') }]}>
+            <Input placeholder={t('settings.nicknamePlaceholder')} size="large" />
           </Form.Item>
           
-          <Form.Item name="photourl" label="头像路径 (GitHub 相对路径或外部 URL)">
-            <Input placeholder="profile/<用户ID>/<crc32>.jpg 或 https://..." size="large" />
+          <Form.Item name="photourl" label={t('settings.avatarPath')}>
+            <Input placeholder={t('settings.avatarPathPlaceholder')} size="large" />
           </Form.Item>
 
           <Button type="primary" htmlType="submit" loading={loading} icon={<Save size={18} />} block size="large">
-            保存修改
+            {t('settings.save')}
           </Button>
         </Form>
       </Card>
 
-      <Title level={4} style={{ marginTop: 32 }}>账号安全</Title>
+      <Title level={4} style={{ marginTop: 32 }}>{t('settings.security')}</Title>
       <Card className="card" style={{ marginTop: 12 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16 }}>
           <div style={{ flex: '1 1 240px' }}>
-            <Text strong>密码登录</Text>
+            <Text strong>{t('settings.passwordLogin')}</Text>
             <br />
             <Text type="secondary">
-              {hasPassword ? '已设置密码，可使用邮箱 + 密码登录' : '未设置密码，设置后可使用邮箱 + 密码登录'}
+              {hasPassword ? t('settings.passwordEnabled') : t('settings.passwordDisabled')}
             </Text>
           </div>
           <Button type="primary" icon={<KeyRound size={16} />} onClick={openPasswordModal}>
-            {hasPassword ? '管理密码' : '设置密码'}
+            {hasPassword ? t('settings.managePassword') : t('settings.setPassword')}
           </Button>
         </div>
       </Card>
 
-      <Title level={4} style={{ marginTop: 32 }}>账号绑定</Title>
+      <Title level={4} style={{ marginTop: 32 }}>{t('settings.bindings')}</Title>
       <Card className="card" style={{ marginTop: 12 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16 }}>
           <div style={{ flex: '1 1 200px' }}>
@@ -187,8 +189,8 @@ const Settings: React.FC = () => {
             <br />
             <Text type="secondary">
               {profile?.qq_uin
-                ? `已绑定（uin: ${profile.qq_uin}）`
-                : '未绑定：绑定后可使用 QQ 扫码登录'}
+                ? t('settings.qqBound', { uin: profile.qq_uin })
+                : t('settings.qqNotBound')}
             </Text>
           </div>
           <Button
@@ -196,7 +198,7 @@ const Settings: React.FC = () => {
             icon={<QqOutlined />}
             onClick={() => setQqModalOpen(true)}
           >
-            {profile?.qq_uin ? '重新绑定 QQ' : '绑定 QQ'}
+            {profile?.qq_uin ? t('settings.qqRebind') : t('settings.qqBind')}
           </Button>
         </div>
       </Card>
@@ -208,23 +210,42 @@ const Settings: React.FC = () => {
         onBindComplete={onQqBindDone}
       />
       
-      <Title level={4} style={{ marginTop: 32 }}>应用</Title>
+      <Title level={4} style={{ marginTop: 32 }}>{t('settings.app')}</Title>
       <Card className="card" style={{ marginTop: 12 }}>
         <List itemLayout="horizontal">
           <List.Item actions={[<Switch checked={mode === 'dark'} onChange={toggleTheme} />]}>
-            <List.Item.Meta avatar={<Moon size={20} />} title="深色模式" />
+            <List.Item.Meta avatar={<Moon size={20} />} title={t('settings.darkMode')} />
+          </List.Item>
+          <List.Item
+            actions={[
+              <Select
+                value={locale}
+                style={{ minWidth: 140 }}
+                options={availableLocales}
+                onChange={(next) => {
+                  setLocale(next);
+                  message.success(t('settings.language.updated'));
+                }}
+              />,
+            ]}
+          >
+            <List.Item.Meta
+              avatar={<Languages size={20} />}
+              title={t('settings.language.title')}
+              description={t('settings.language.description')}
+            />
           </List.Item>
           <List.Item
             extra={
               <Button type="link" onClick={() => navigate('/about')}>
-                前往
+                {t('settings.go')}
               </Button>
             }
           >
             <List.Item.Meta
               avatar={<Info size={20} />}
-              title="关于 SocialFlow"
-              description="技术栈、开源仓库、版权与友情链接"
+              title={t('settings.about')}
+              description={t('settings.aboutDesc')}
             />
           </List.Item>
         </List>
@@ -233,17 +254,17 @@ const Settings: React.FC = () => {
       <Divider style={{ margin: '40px 0' }} />
       
       <Button danger type="dashed" icon={<LogOut size={18} />} block size="large" onClick={logout}>
-        退出登录
+        {t('settings.logout')}
       </Button>
 
       <Modal
-        title={hasPassword ? '管理密码' : '设置密码'}
+        title={hasPassword ? t('settings.managePassword') : t('settings.setPassword')}
         open={passwordModalOpen}
         onCancel={() => setPasswordModalOpen(false)}
         onOk={() => passwordForm.submit()}
         confirmLoading={passwordSaving}
-        okText="保存"
-        cancelText="取消"
+        okText={t('common.save')}
+        cancelText={t('common.cancel')}
         destroyOnHidden
       >
         <Form
@@ -256,39 +277,39 @@ const Settings: React.FC = () => {
           {hasPassword && (
             <Form.Item
               name="currentPassword"
-              label="当前密码"
-              rules={[{ required: true, message: '请输入当前密码' }]}
+              label={t('settings.currentPassword')}
+              rules={[{ required: true, message: t('settings.currentPasswordRequired') }]}
             >
-              <Input.Password placeholder="请输入当前密码" autoComplete="current-password" />
+              <Input.Password placeholder={t('settings.currentPassword')} autoComplete="current-password" />
             </Form.Item>
           )}
           <Form.Item
             name="newPassword"
-            label="新密码"
+            label={t('settings.newPassword')}
             rules={[
-              { required: true, message: '请输入新密码' },
-              { min: 8, message: '密码至少 8 位' },
+              { required: true, message: t('settings.newPasswordRequired') },
+              { min: 8, message: t('settings.newPasswordMin') },
             ]}
           >
-            <Input.Password placeholder="至少 8 位" autoComplete="new-password" />
+            <Input.Password placeholder={t('settings.newPasswordPlaceholder')} autoComplete="new-password" />
           </Form.Item>
           <Form.Item
             name="confirmPassword"
-            label="确认新密码"
+            label={t('settings.confirmPassword')}
             dependencies={['newPassword']}
             rules={[
-              { required: true, message: '请再次输入新密码' },
+              { required: true, message: t('settings.confirmPasswordRequired') },
               ({ getFieldValue }) => ({
                 validator(_, value) {
                   if (!value || getFieldValue('newPassword') === value) {
                     return Promise.resolve();
                   }
-                  return Promise.reject(new Error('两次输入的密码不一致'));
+                  return Promise.reject(new Error(t('settings.confirmPasswordMismatch')));
                 },
               }),
             ]}
           >
-            <Input.Password placeholder="再次输入新密码" autoComplete="new-password" />
+            <Input.Password placeholder={t('settings.confirmPasswordPlaceholder')} autoComplete="new-password" />
           </Form.Item>
         </Form>
       </Modal>

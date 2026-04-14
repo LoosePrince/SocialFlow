@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Typography, theme, Modal } from 'antd';
 import { apiJson } from '../lib/api';
+import { useI18n } from '../context/I18nContext';
 import CommentText from './CommentText';
 
 const { Text } = Typography;
@@ -14,6 +15,7 @@ const CommentPreview: React.FC<CommentPreviewProps> = ({ contentId }) => {
   const [isOverflow, setIsOverflow] = useState(false);
   const [openFull, setOpenFull] = useState(false);
   const { token } = theme.useToken();
+  const { t } = useI18n();
   const textWrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -106,7 +108,7 @@ const CommentPreview: React.FC<CommentPreviewProps> = ({ contentId }) => {
       </div>
 
       <Modal
-        title="完整评论"
+        title={t('comment.full')}
         open={openFull}
         onCancel={() => setOpenFull(false)}
         footer={null}

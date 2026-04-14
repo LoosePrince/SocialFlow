@@ -7,6 +7,7 @@ import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
 import SmartFeedImage from '../components/SmartFeedImage';
 import { ArrowLeft, Clock, Pencil } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../context/I18nContext';
 import { getGithubUrl } from '../github';
 import CommentSection from '../components/CommentSection';
 import PostBodyDisplay from '../components/PostBodyDisplay';
@@ -21,6 +22,7 @@ const PostDetail: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
+  const { t } = useI18n();
   const [post, setPost] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const { token } = theme.useToken();
@@ -61,7 +63,7 @@ const PostDetail: React.FC = () => {
       </motion.div>
     );
   }
-  if (!post) return <div style={{ padding: 24, textAlign: 'center' }}><Text type="secondary">动态不存在</Text></div>;
+  if (!post) return <div style={{ padding: 24, textAlign: 'center' }}><Text type="secondary">{t('post.notFound')}</Text></div>;
 
   const postTimeMs = toMillis(post.createdat ?? post.createdAt);
 
@@ -78,7 +80,7 @@ const PostDetail: React.FC = () => {
           onClick={() => navigate(-1)}
           style={{ color: token.colorTextSecondary }}
         >
-          返回
+          {t('detail.back')}
         </Button>
         {canEditPost && (
           <Button
@@ -87,7 +89,7 @@ const PostDetail: React.FC = () => {
             icon={<Pencil size={16} strokeWidth={2} />}
             onClick={() => navigate(`/create?edit=${encodeURIComponent(post.id)}&type=post`)}
           >
-            编辑
+            {t('detail.edit')}
           </Button>
         )}
       </Flex>

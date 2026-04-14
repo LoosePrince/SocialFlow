@@ -2,8 +2,10 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Result } from 'antd';
 import { motion } from 'framer-motion';
+import { useI18n } from '../context/I18nContext';
 
 const NotFound: React.FC = () => {
+  const { t } = useI18n();
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -12,11 +14,11 @@ const NotFound: React.FC = () => {
     >
       <Result
         status="404"
-        title="页面不存在"
-        subTitle="链接可能已失效，或地址输入有误。"
+        title={t('notFound.title')}
+        subTitle={t('notFound.subtitle')}
         extra={
           <Link to="/">
-            <Button type="primary">返回首页</Button>
+            <Button type="primary">{t('notFound.backHome')}</Button>
           </Link>
         }
       />

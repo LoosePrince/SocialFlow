@@ -10,6 +10,7 @@ import { motion } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useUsers } from '../hooks/useUsers';
 import { Settings } from 'lucide-react';
+import { useI18n } from '../context/I18nContext';
 
 const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -22,6 +23,7 @@ const Profile: React.FC = () => {
   const { feeds, loading: feedsLoading } = useFeeds(true);
   const { token } = theme.useToken();
   const screens = useBreakpoint();
+  const { t } = useI18n();
 
   const targetUid = uid || currentUser?.id;
   const isOwnProfile = targetUid === currentUser?.id;
@@ -41,7 +43,7 @@ const Profile: React.FC = () => {
     );
   }
 
-  if (!displayProfile) return <div><Empty description="未找到该用户" /></div>;
+  if (!displayProfile) return <div><Empty description={t('profile.notFound')} /></div>;
 
   return (
     <motion.div 
@@ -65,7 +67,7 @@ const Profile: React.FC = () => {
             type="text"
             icon={<Settings size={22} strokeWidth={2} />}
             onClick={() => navigate('/settings')}
-            aria-label="设置"
+            aria-label={t('nav.settings')}
             style={{ position: 'absolute', top: 12, right: 8, zIndex: 1 }}
           />
         )}
@@ -83,17 +85,17 @@ const Profile: React.FC = () => {
           <Text type="secondary">{displayProfile.email}</Text>
           <Flex gap={16} align="center" style={{ marginTop: 16 }}>
              <Space split={<Divider type="vertical" />}>
-                <Text><b>{userFeeds.length}</b> 发布</Text>
-                <Text><b>{displayProfile.role === 'admin' ? '管理员' : '普通用户'}</b></Text>
+                <Text><b>{userFeeds.length}</b> {t('profile.published')}</Text>
+                <Text><b>{displayProfile.role === 'admin' ? t('profile.roleAdmin') : t('profile.roleUser')}</b></Text>
              </Space>
           </Flex>
         </Flex>
       </Card>
 
       <div style={{ marginTop: 32 }}>
-        <Title level={4} style={{ marginBottom: 20 }}>发布的内容</Title>
+        <Title level={4} style={{ marginBottom: 20 }}>{t('profile.publishedContent')}</Title>
         {userFeeds.length === 0 ? (
-          <Empty description="还没有发布过内容" />
+          <Empty description={t('profile.empty')} />
         ) : (
           userFeeds.map(item => (
             <div key={item.id}>

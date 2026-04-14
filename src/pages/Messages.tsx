@@ -5,6 +5,7 @@ import { AtSign, Heart, CheckCircle2 } from 'lucide-react';
 import { useNotificationCenter } from '../context/NotificationContext';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../context/I18nContext';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
@@ -21,6 +22,7 @@ const Messages: React.FC = () => {
   const { notifications, loading, refresh } = useNotificationCenter();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { t } = useI18n();
 
   const markAllAsRead = async () => {
     if (!user) return;
@@ -57,17 +59,17 @@ const Messages: React.FC = () => {
     <motion.div className="main-container" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <Title level={2} style={{ margin: 0 }}>
-          消息
+          {t('messages.title')}
         </Title>
         {notifications.some((n) => !n.isRead) && (
           <Button icon={<CheckCircle2 size={16} />} onClick={markAllAsRead}>
-            全部已读
+            {t('messages.markAllRead')}
           </Button>
         )}
       </div>
 
       {notifications.length === 0 ? (
-        <Empty description="暂无消息" />
+        <Empty description={t('messages.empty')} />
       ) : (
         <List
           className="card"
@@ -102,7 +104,7 @@ const Messages: React.FC = () => {
                   title={
                     <Space wrap>
                       <Text strong>{item.fromUserName}</Text>
-                      <Text type="secondary">在评论中艾特了你</Text>
+                      <Text type="secondary">{t('messages.mentionedYou')}</Text>
                       <Text type="secondary" style={{ fontSize: 12 }}>
                         {notifTimeMs != null ? dayjs(notifTimeMs).fromNow() : '—'}
                       </Text>

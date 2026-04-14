@@ -15,6 +15,7 @@ import { apiJson } from '../lib/api';
 import { subscribeAppEvents } from '../lib/appSse';
 import { toMillis } from '../lib/time';
 import { useLoginModal } from '../context/LoginModalContext';
+import { useI18n } from '../context/I18nContext';
 
 const { Text } = Typography;
 
@@ -46,6 +47,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
   const [editCommentViewMode, setEditCommentViewMode] = useState<'edit' | 'preview'>('edit');
   const { users } = useUsers();
   const { message, modal } = App.useApp();
+  const { t } = useI18n();
 
   const navigate = useNavigate();
 
@@ -92,7 +94,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
       await fetchLikeMeta();
       setLikeListNonce((n) => n + 1);
     } catch {
-      message.error('操作失败');
+      message.error(t('common.actionFailed'));
     }
   };
 
@@ -164,10 +166,10 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
 
       setText('');
       setReplyTo(null);
-      message.success('评论成功');
+      message.success(t('comment.submitSuccess'));
       await fetchComments();
     } catch (err: any) {
-      message.error(`评论失败: ${err.message}`);
+      message.error(`${t('comment.submitFailed')} ${err.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -191,11 +193,11 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
         method: 'PATCH',
         body: JSON.stringify({ text: editCommentText.trim() }),
       });
-      message.success('评论已更新');
+      message.success(t('comment.updated'));
       setEditCommentId(null);
       await fetchComments();
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : '保存失败');
+      message.error(err instanceof Error ? err.message : t('common.saveFailed'));
     } finally {
       setSavingCommentEdit(false);
     }
@@ -203,17 +205,17 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
 
   const handleDeleteComment = (commentId: string) => {
     modal.confirm({
-      title: '确定要删除这条评论吗？',
-      okText: '删除',
+      title: t('comment.deleteConfirmTitle'),
+      okText: t('common.delete'),
       okType: 'danger',
-      cancelText: '取消',
+      cancelText: t('common.cancel'),
       onOk: async () => {
         try {
           await apiJson(`/api/comments/${commentId}`, { method: 'DELETE' });
-          message.success('评论已删除');
+          message.success(t('comment.deleted'));
           await fetchComments();
         } catch {
-          message.error('删除失败');
+          message.error(t('common.deleteFailed'));
         }
       },
     });
@@ -222,12 +224,12 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
   return (
     <div style={{ background: token.colorBgContainer, borderRadius: token.borderRadiusLG, padding: 20 }}>
       <Modal
-        title="编辑评论"
+        title={t('comment.editTitle')}
         open={editCommentId !== null}
         onOk={() => void handleSaveCommentEdit()}
         onCancel={() => setEditCommentId(null)}
         confirmLoading={savingCommentEdit}
-        okText="保存"
+        okText={t('common.save')}
         destroyOnClose
       >
         <Flex vertical gap={10}>
@@ -237,8 +239,8 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
             onChange={(v) => setEditCommentViewMode(v as 'edit' | 'preview')}
             block
             options={[
-              { label: '编辑', value: 'edit' },
-              { label: '预览', value: 'preview' },
+              { label: t('common.edit'), value: 'edit' },
+              { label: t('common.preview'), value: 'preview' },
             ]}
           />
           {editCommentViewMode === 'edit' ? (
@@ -247,7 +249,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
                 rows={5}
                 value={editCommentText}
                 onChange={(e) => setEditCommentText(e.target.value)}
-                placeholder="修改评论内容"
+                placeholder={t('comment.editPlaceholder')}
                 style={{ flex: 1 }}
               />
               <OwoEmojiPicker
@@ -270,7 +272,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
               {editCommentText.trim() ? (
                 <CommentText text={editCommentText} />
               ) : (
-                <Text type="secondary">暂无内容</Text>
+                <Text type="secondary">{t('common.emptyContent')}</Text>
               )}
             </div>
           )}
@@ -313,7 +315,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
 
       <Flex align="center" gap={8} style={{ marginBottom: 20 }}>
         <MessageCircle size={18} />
-        <Text strong style={{ fontSize: 16 }}>评论 · {comments.length}</Text>
+        <Text strong style={{ fontSize: 16 }}>{t('comment.title')} · {comments.length}</Text>
       </Flex>
 
       <Flex gap={12} style={{ marginBottom: 24 }}>
@@ -338,8 +340,8 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
               borderRadius: 8, 
               marginBottom: 8 
             }}>
-              <Text style={{ fontSize: 12 }}>回复 <Text strong>@{replyTo.authorName}</Text></Text>
-              <Button type="link" size="small" onClick={() => setReplyTo(null)}>取消</Button>
+              <Text style={{ fontSize: 12 }}>{t('comment.replyTo')} <Text strong>@{replyTo.authorName}</Text></Text>
+              <Button type="link" size="small" onClick={() => setReplyTo(null)}>{t('common.cancel')}</Button>
             </Flex>
           )}
           {user ? (
@@ -349,8 +351,8 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
                 value={composeMode}
                 onChange={(v) => setComposeMode(v as 'edit' | 'preview')}
                 options={[
-                  { label: '编辑', value: 'edit' },
-                  { label: '预览', value: 'preview' },
+                  { label: t('common.edit'), value: 'edit' },
+                  { label: t('common.preview'), value: 'preview' },
                 ]}
                 style={{ alignSelf: 'flex-start' }}
               />
@@ -367,7 +369,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
                 {composeMode === 'edit' ? (
                   <>
                     <Mentions
-                      placeholder="写下你的精彩评论..."
+                      placeholder={t('comment.placeholder')}
                       autoSize={{ minRows: 1, maxRows: 6 }}
                       value={text}
                       onChange={(val) => setText(val)}
@@ -398,7 +400,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
                     {text.trim() ? (
                       <CommentText text={text} />
                     ) : (
-                      <Text type="secondary">暂无内容</Text>
+                      <Text type="secondary">{t('common.emptyContent')}</Text>
                     )}
                   </div>
                 )}
@@ -438,10 +440,10 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
               }}
             >
               <Text type="secondary" style={{ flex: 1, userSelect: 'none' }}>
-                登录后参与评论…
+                {t('comment.loginToJoin')}
               </Text>
               <Text type="secondary" style={{ fontSize: 12, userSelect: 'none' }}>
-                去登录
+                {t('nav.login')}
               </Text>
             </div>
           )}
@@ -480,7 +482,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
                       }}
                       style={{ color: token.colorTextSecondary, padding: 0, width: 'fit-content' }}
                     >
-                      回复
+                      {t('comment.reply')}
                     </Button>
                     {isAdmin && (
                       <Button
@@ -490,7 +492,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
                         onClick={() => openEditComment(item)}
                         style={{ padding: 0, width: 'fit-content' }}
                       >
-                        编辑
+                        {t('common.edit')}
                       </Button>
                     )}
                     {(isAdmin || user?.id === item.authorid) && (
@@ -502,7 +504,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
                         onClick={() => handleDeleteComment(item.id)}
                         style={{ padding: 0, width: 'fit-content' }}
                       >
-                        删除
+                        {t('common.delete')}
                       </Button>
                     )}
                   </Flex>
@@ -537,7 +539,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
                               }}
                               style={{ width: 'fit-content', padding: 0 }}
                             >
-                              回复
+                              {t('comment.reply')}
                             </Button>
                             {isAdmin && (
                               <Button
@@ -547,7 +549,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
                                 onClick={() => openEditComment(reply)}
                                 style={{ padding: 0, width: 'fit-content' }}
                               >
-                                编辑
+                                {t('common.edit')}
                               </Button>
                             )}
                             {(isAdmin || user?.id === reply.authorid) && (
@@ -559,7 +561,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
                                 onClick={() => handleDeleteComment(reply.id)}
                                 style={{ padding: 0, width: 'fit-content' }}
                               >
-                                删除
+                                {t('common.delete')}
                               </Button>
                             )}
                           </Flex>

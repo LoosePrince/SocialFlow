@@ -5,6 +5,7 @@ import { GithubCdnImg } from './GithubCdnImg';
 import { Rocket, Clock, MessageSquare, MoreHorizontal, ShieldCheck, Pencil, Heart, Share2, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../context/I18nContext';
 import { apiJson } from '../lib/api';
 import { toMillis } from '../lib/time';
 import dayjs from 'dayjs';
@@ -18,6 +19,7 @@ interface ProjectCardProps {
 const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
+  const { t } = useI18n();
   const { message, modal } = App.useApp();
   const { token } = theme.useToken();
   const [shareOpen, setShareOpen] = useState(false);
@@ -33,40 +35,40 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
         method: 'PATCH',
         body: JSON.stringify({ isrecommended: !project.isrecommended }),
       });
-      message.success(data.isrecommended ? '已推荐项目' : '已取消推荐');
+      message.success(data.isrecommended ? t('project.recommendSuccessOn') : t('project.recommendSuccessOff'));
     } catch {
-      message.error('操作失败');
+      message.error(t('project.actionFailed'));
     }
   };
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
     modal.confirm({
-      title: '确定要删除这个项目吗？',
-      content: '删除后无法恢复，且相关动态和评论可能受到影响',
-      okText: '删除',
+      title: t('project.deleteConfirmTitle'),
+      content: t('project.deleteConfirmContent'),
+      okText: t('project.delete'),
       okType: 'danger',
-      cancelText: '取消',
+      cancelText: t('common.cancel'),
       onOk: async () => {
         try {
           await apiJson(`/api/projects/${project.id}`, { method: 'DELETE' });
-          message.success('已删除');
+          message.success(t('project.deleted'));
         } catch {
-          message.error('删除失败');
+          message.error(t('project.deleteFailed'));
         }
       }
     });
   };
 
   const shareUrl = `${window.location.origin}/project/${project.id}`;
-  const shareMailTo = `mailto:?subject=${encodeURIComponent(`分享一个项目：${project.title ?? ''}`)}&body=${encodeURIComponent(shareUrl)}`;
+  const shareMailTo = `mailto:?subject=${encodeURIComponent(`${t('share.projectTitle')}：${project.title ?? ''}`)}&body=${encodeURIComponent(shareUrl)}`;
 
   const handleCopyShareLink = async () => {
     try {
       await navigator.clipboard.writeText(shareUrl);
-      message.success('链接已复制');
+      message.success(t('share.linkCopied'));
     } catch {
-      message.error('复制失败，请手动复制');
+      message.error(t('share.copyFailed'));
     }
   };
 
@@ -100,7 +102,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
             }}
           />
           <div style={{ position: 'absolute', top: 12, left: 12 }}>
-            <Tag color={token.colorPrimary} icon={<Rocket size={12} />}>项目方案</Tag>
+            <Tag color={token.colorPrimary} icon={<Rocket size={12} />}>{t('project.scheme')}</Tag>
           </div>
         </div>
       }
@@ -125,7 +127,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
           style={{ cursor: 'pointer' }}
         >
           <Share2 size={14} />
-          <Text type="secondary" style={{ fontSize: 12 }}>分享</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{t('share.short')}</Text>
         </Flex>,
         canManage ? (
           <Popover
@@ -141,7 +143,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
                     navigate(`/create?edit=${encodeURIComponent(project.id)}&type=project`);
                   }}
                 >
-                  编辑内容
+                  {t('project.edit')}
                 </Button>
                 {isAdmin && (
                   <Button
@@ -150,7 +152,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
                     onClick={toggleRecommendation}
                     style={{ textAlign: 'left' }}
                   >
-                    {project.isrecommended ? '取消推荐' : '设为推荐'}
+                    {project.isrecommended ? t('project.recommendOff') : t('project.recommendOn')}
                   </Button>
                 )}
                 <Button
@@ -160,7 +162,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
                   onClick={handleDelete}
                   style={{ textAlign: 'left' }}
                 >
-                  删除内容
+                  {t('project.delete')}
                 </Button>
               </Flex>
             }
@@ -209,7 +211,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
       />
 
       <Modal
-        title="分享项目"
+        title={t('share.projectTitle')}
         open={shareOpen}
         onCancel={() => setShareOpen(false)}
         footer={null}
@@ -219,10 +221,10 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
           <Input value={shareUrl} readOnly />
           <Flex gap={8}>
             <Button type="primary" onClick={() => void handleCopyShareLink()}>
-              复制链接
+              {t('share.copyLink')}
             </Button>
             <Button href={shareMailTo}>
-              通过邮件分享
+              {t('share.byEmail')}
             </Button>
           </Flex>
         </Flex>

@@ -1,6 +1,7 @@
 import { Button, Empty, Input, Popover, Spin, Tabs, theme } from 'antd';
 import { Smile } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useI18n } from '../context/I18nContext';
 import { useTwikooOwo } from '../hooks/useTwikooOwo';
 import type { TwikooOwoItem } from '../lib/twikooOwo';
 
@@ -25,6 +26,7 @@ const OwoEmojiPicker: React.FC<OwoEmojiPickerProps> = ({
   buttonSize = 'middle',
 }) => {
   const { token } = theme.useToken();
+  const { t } = useI18n();
   const { ready, error, items, packs } = useTwikooOwo();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -131,7 +133,7 @@ const OwoEmojiPicker: React.FC<OwoEmojiPickerProps> = ({
     <div style={{ width: 320 }}>
       <Input.Search
         allowClear
-        placeholder="搜索套组或标识…"
+        placeholder={t('owo.searchPlaceholder')}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         style={{ marginBottom: 8 }}
@@ -143,12 +145,12 @@ const OwoEmojiPicker: React.FC<OwoEmojiPickerProps> = ({
       )}
       {error && (
         <Empty
-          description="表情列表加载失败"
+          description={t('owo.loadFailed')}
           image={Empty.PRESENTED_IMAGE_SIMPLE}
         />
       )}
       {ready && !error && searchMode && filteredSearch.length === 0 && (
-        <Empty description="无匹配表情" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty description={t('owo.noMatch')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
       )}
       {ready && !error && searchMode && filteredSearch.length > 0 && (
         <div>
@@ -159,13 +161,13 @@ const OwoEmojiPicker: React.FC<OwoEmojiPickerProps> = ({
               marginBottom: 8,
             }}
           >
-            搜索结果（{filteredSearch.length}）
+            {t('owo.searchResult', { count: filteredSearch.length })}
           </div>
           {renderEmojiGrid(filteredSearch)}
         </div>
       )}
       {ready && !error && !searchMode && packs.length === 0 && (
-        <Empty description="暂无表情套组" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty description={t('owo.emptyPack')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
       )}
       {ready && !error && !searchMode && packs.length > 0 && (
         <Tabs
@@ -184,7 +186,7 @@ const OwoEmojiPicker: React.FC<OwoEmojiPickerProps> = ({
   return (
     <Popover
       content={body}
-      title="插入表情"
+      title={t('owo.insertTitle')}
       trigger="click"
       open={open}
       onOpenChange={(v) => {
@@ -198,7 +200,7 @@ const OwoEmojiPicker: React.FC<OwoEmojiPickerProps> = ({
         size={buttonSize}
         disabled={disabled}
         icon={<Smile size={20} />}
-        aria-label="插入表情"
+        aria-label={t('owo.insertTitle')}
         style={{ color: token.colorTextSecondary, flexShrink: 0 }}
       />
     </Popover>

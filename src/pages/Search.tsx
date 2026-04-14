@@ -5,6 +5,7 @@ import { Search as SearchIcon, User, FileText, FolderKanban } from 'lucide-react
 import { motion } from 'framer-motion';
 import { useUsers } from '../hooks/useUsers';
 import { useFeeds } from '../hooks/useFeeds';
+import { useI18n } from '../context/I18nContext';
 import { getGithubUrl } from '../github';
 
 const { Title, Text, Paragraph } = Typography;
@@ -19,6 +20,7 @@ const Search: React.FC = () => {
   const q = searchParams.get('q') ?? '';
   const [inputText, setInputText] = useState(() => searchParams.get('q') ?? '');
   const { token } = theme.useToken();
+  const { t } = useI18n();
 
   useEffect(() => {
     setInputText(searchParams.get('q') ?? '');
@@ -66,7 +68,7 @@ const Search: React.FC = () => {
       style={{ maxWidth: 680, margin: '0 auto', paddingBottom: 24 }}
     >
       <Title level={2} style={{ marginBottom: 16 }}>
-        搜索
+        {t('search.title')}
       </Title>
 
       <Input.Search
@@ -74,7 +76,7 @@ const Search: React.FC = () => {
         size="large"
         allowClear
         enterButton
-        placeholder="搜索用户昵称、动态内容、项目标题…"
+        placeholder={t('search.placeholder')}
         prefix={<SearchIcon size={18} style={{ color: token.colorTextDescription }} />}
         value={inputText}
         onChange={(e) => setInputText(e.target.value)}
@@ -91,13 +93,13 @@ const Search: React.FC = () => {
           <Spin size="large" />
         </div>
       ) : !hasQuery ? (
-        <Empty description="输入关键词，搜索用户、动态或项目" />
+        <Empty description={t('search.emptyInput')} />
       ) : !hasResults ? (
-        <Empty description="没有找到相关内容" />
+        <Empty description={t('search.emptyResult')} />
       ) : (
         <div>
           {filteredUsers.length > 0 && (
-            <Card size="small" title={<><User size={16} style={{ marginRight: 8 }} />用户</>} style={{ marginBottom: 16 }}>
+            <Card size="small" title={<><User size={16} style={{ marginRight: 8 }} />{t('search.users')}</>} style={{ marginBottom: 16 }}>
               <List
                 dataSource={filteredUsers}
                 renderItem={(u) => {
@@ -122,14 +124,14 @@ const Search: React.FC = () => {
           {filteredPosts.length > 0 && (
             <>
               {filteredUsers.length > 0 && <Divider />}
-              <Card size="small" title={<><FileText size={16} style={{ marginRight: 8 }} />动态</>} style={{ marginBottom: 16 }}>
+              <Card size="small" title={<><FileText size={16} style={{ marginRight: 8 }} />{t('search.posts')}</>} style={{ marginBottom: 16 }}>
                 <List
                   dataSource={filteredPosts}
                   renderItem={(item) => (
                     <List.Item>
                       <div style={{ width: '100%' }}>
                         <Link to={`/post/${item.id}`} style={{ color: token.colorLink, fontWeight: 600 }}>
-                          {String(item.authorName ?? '用户')} 的动态
+                          {String(item.authorName ?? t('search.userFallback'))} {t('search.postSuffix')}
                         </Link>
                         <Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0, marginTop: 4 }} type="secondary">
                           {String(item.content ?? '').slice(0, 200)}
@@ -145,14 +147,14 @@ const Search: React.FC = () => {
           {filteredProjects.length > 0 && (
             <>
               {(filteredUsers.length > 0 || filteredPosts.length > 0) && <Divider />}
-              <Card size="small" title={<><FolderKanban size={16} style={{ marginRight: 8 }} />项目</>}>
+              <Card size="small" title={<><FolderKanban size={16} style={{ marginRight: 8 }} />{t('search.projects')}</>}>
                 <List
                   dataSource={filteredProjects}
                   renderItem={(item) => (
                     <List.Item>
                       <div style={{ width: '100%' }}>
                         <Link to={`/project/${item.id}`} style={{ color: token.colorLink, fontWeight: 600 }}>
-                          {String(item.title ?? '未命名项目')}
+                          {String(item.title ?? t('search.projectFallback'))}
                         </Link>
                         <Text type="secondary" ellipsis style={{ display: 'block', marginTop: 4 }}>
                           {String(item.summary ?? '').slice(0, 160)}

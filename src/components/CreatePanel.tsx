@@ -4,6 +4,7 @@ import type { UploadFile } from 'antd';
 import { ImagePlus, Type, FileText, Send, Projector, Eye } from 'lucide-react';
 import { uploadToGithub, getGithubUrl } from '../github';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../context/I18nContext';
 import { apiJson } from '../lib/api';
 import PostBodyDisplay from './PostBodyDisplay';
 import ProjectMarkdownContent from './ProjectMarkdownContent';
@@ -33,7 +34,7 @@ async function pathsFromUploadList(
       const pf = f as PathFile;
       if (f.originFileObj) return upload(f.originFileObj as File);
       if (pf.path) return pf.path;
-      throw new Error('部分图片缺少路径，请移除后重新上传');
+      throw new Error('missing path');
     })
   );
 }
@@ -55,6 +56,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
   const [postBodyMode, setPostBodyMode] = useState<'edit' | 'preview'>('edit');
   const [projectBodyMode, setProjectBodyMode] = useState<'edit' | 'preview'>('edit');
   const { message } = App.useApp();
+  const { t } = useI18n();
   const { token } = theme.useToken();
   const screens = useBreakpoint();
   const isPageMobile = variant === 'page' && !screens.md;
@@ -152,7 +154,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
           setProjectFileList(list);
         }
       } catch {
-        message.error('加载内容失败');
+        message.error(t('create.loadFailed'));
       } finally {
         if (!cancelled) setLoadingEdit(false);
       }
@@ -179,7 +181,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
             ...(isAdmin ? { isrecommended: !!values.isrecommended } : {}),
           }),
         });
-        message.success('动态已更新');
+        message.success(t('create.postUpdated'));
       } else {
         await apiJson('/api/posts', {
           method: 'POST',
@@ -190,7 +192,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
             isrecommended: isAdmin ? !!values.isrecommended : false,
           }),
         });
-        message.success('动态发布成功');
+        message.success(t('create.postCreated'));
         setPostDraftId(crypto.randomUUID());
       }
 
@@ -198,7 +200,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
       setPostFileList([]);
       onSuccess();
     } catch (error: unknown) {
-      message.error(`操作失败: ${error instanceof Error ? error.message : String(error)}`);
+      message.error(`${t('common.actionFailed')}: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setLoading(false);
     }
@@ -231,7 +233,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
             ...(isAdmin ? { isrecommended: !!values.isrecommended } : {}),
           }),
         });
-        message.success('项目已更新');
+        message.success(t('create.projectUpdated'));
       } else {
         await apiJson('/api/projects', {
           method: 'POST',
@@ -245,7 +247,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
             isrecommended: isAdmin ? !!values.isrecommended : false,
           }),
         });
-        message.success('项目创建成功');
+        message.success(t('create.projectCreated'));
         setProjectDraftId(crypto.randomUUID());
       }
 
@@ -253,14 +255,14 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
       setProjectFileList([]);
       onSuccess();
     } catch (error: unknown) {
-      message.error(`操作失败: ${error instanceof Error ? error.message : String(error)}`);
+      message.error(`${t('common.actionFailed')}: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setLoading(false);
     }
   };
 
   const onFinishFailed = () => {
-    message.error('请完善表单必填项');
+    message.error(t('create.formRequired'));
   };
 
   const touchBtnStyle = isPageMobile ? { minHeight: 48, fontSize: 16 } : undefined;
@@ -287,7 +289,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
           disabled: editTarget?.kind === 'project',
           label: (
             <Space size={isPageMobile ? 4 : 8}>
-              <Type size={isPageMobile ? 17 : 18} /> 动态
+              <Type size={isPageMobile ? 17 : 18} /> {t('create.postTab')}
             </Space>
           ),
           children: (
@@ -308,7 +310,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                       label: (
                         <Space size={4}>
                           <Type size={14} />
-                          编辑
+                          {t('common.edit')}
                         </Space>
                       ),
                       value: 'edit',
@@ -317,7 +319,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                       label: (
                         <Space size={4}>
                           <Eye size={14} />
-                          预览
+                          {t('common.preview')}
                         </Space>
                       ),
                       value: 'preview',
@@ -327,11 +329,11 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
               </Flex>
               <Form.Item
                 name="content"
-                rules={[{ required: true, message: '请输入动态内容' }]}
+                rules={[{ required: true, message: t('create.postContentRequired') }]}
                 hidden={postBodyMode === 'preview'}
               >
                 <Input.TextArea
-                  placeholder="分享你现在的心情..."
+                  placeholder={t('create.postPlaceholder')}
                   rows={isPageMobile ? 6 : variant === 'page' ? 5 : 4}
                   variant={isPageMobile ? 'outlined' : 'borderless'}
                   style={{
@@ -358,7 +360,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                       fontSize={isPageMobile ? 16 : 18}
                     />
                   ) : (
-                    <Text type="secondary">暂无正文，请在「编辑」中输入</Text>
+                    <Text type="secondary">{t('create.noPostPreview')}</Text>
                   )}
                   {postFileList.length > 0 && (
                     <div
@@ -399,7 +401,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                   )}
                 </div>
               )}
-              <Form.Item label={isPageMobile ? '图片（最多 9 张）' : '图片 (最多9张)'}>
+              <Form.Item label={t('create.postImages')}>
                 <div className={isPageMobile ? 'create-page-upload-scroll' : undefined}>
                   <Upload
                     listType="picture-card"
@@ -412,7 +414,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                     {postFileList.length >= 9 ? null : (
                       <div style={{ padding: isPageMobile ? 4 : undefined }}>
                         <ImagePlus size={isPageMobile ? 22 : 20} />
-                        <div style={{ marginTop: 6, fontSize: isPageMobile ? 12 : undefined }}>上传</div>
+                        <div style={{ marginTop: 6, fontSize: isPageMobile ? 12 : undefined }}>{t('common.upload')}</div>
                       </div>
                     )}
                   </Upload>
@@ -421,7 +423,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
               {isAdmin && (
                 <Form.Item
                   name="isrecommended"
-                  label="推荐到首页"
+                  label={t('create.recommend')}
                   valuePropName="checked"
                   initialValue={false}
                 >
@@ -437,7 +439,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                 icon={<Send size={18} />}
                 style={touchBtnStyle}
               >
-                {editTarget?.kind === 'post' ? '保存动态' : '发布动态'}
+                {editTarget?.kind === 'post' ? t('create.savePost') : t('create.publishPost')}
               </Button>
             </Form>
           ),
@@ -447,7 +449,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
           disabled: editTarget?.kind === 'post',
           label: (
             <Space size={isPageMobile ? 4 : 8}>
-              <FileText size={isPageMobile ? 17 : 18} /> 项目
+              <FileText size={isPageMobile ? 17 : 18} /> {t('create.projectTab')}
             </Space>
           ),
           children: (
@@ -468,7 +470,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                       label: (
                         <Space size={4}>
                           <FileText size={14} />
-                          编辑
+                          {t('common.edit')}
                         </Space>
                       ),
                       value: 'edit',
@@ -477,7 +479,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                       label: (
                         <Space size={4}>
                           <Eye size={14} />
-                          预览
+                          {t('common.preview')}
                         </Space>
                       ),
                       value: 'preview',
@@ -487,23 +489,23 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
               </Flex>
               <Form.Item
                 name="title"
-                label="项目名称"
+                label={t('create.projectTitle')}
                 hidden={projectBodyMode === 'preview'}
-                rules={[{ required: true, message: '请填写项目标题' }]}
+                rules={[{ required: true, message: t('create.projectTitleRequired') }]}
               >
-                <Input placeholder="输入项目标题" size="large" style={inputFont} />
+                <Input placeholder={t('create.projectTitlePlaceholder')} size="large" style={inputFont} />
               </Form.Item>
-              <Form.Item name="summary" label="简短介绍" hidden={projectBodyMode === 'preview'}>
-                <Input.TextArea placeholder="简短的项目介绍" rows={isPageMobile ? 3 : 2} style={inputFont} />
+              <Form.Item name="summary" label={t('create.projectSummary')} hidden={projectBodyMode === 'preview'}>
+                <Input.TextArea placeholder={t('create.projectSummaryPlaceholder')} rows={isPageMobile ? 3 : 2} style={inputFont} />
               </Form.Item>
               <Form.Item
                 name="projectContent"
-                label="项目详情 (Markdown)"
+                label={t('create.projectContent')}
                 hidden={projectBodyMode === 'preview'}
-                rules={[{ required: true, message: '请填写项目详情' }]}
+                rules={[{ required: true, message: t('create.projectContentRequired') }]}
               >
                 <Input.TextArea
-                  placeholder="支持 Markdown 格式内容"
+                  placeholder={t('create.projectContentPlaceholder')}
                   rows={isPageMobile ? 8 : 6}
                   style={{ ...inputFont, minHeight: isPageMobile ? 160 : undefined }}
                 />
@@ -519,22 +521,22 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                   }}
                 >
                   <Title level={4} style={{ marginTop: 0 }}>
-                    {watchedProjectTitle?.trim() ? watchedProjectTitle : '（无标题）'}
+                    {watchedProjectTitle?.trim() ? watchedProjectTitle : t('create.projectNoTitle')}
                   </Title>
                   <Paragraph type="secondary" style={{ fontSize: isPageMobile ? 15 : 16, marginBottom: 12 }}>
                     {watchedProjectSummary?.trim()
                       ? watchedProjectSummary
-                      : '（暂无简介）'}
+                      : t('create.projectNoSummary')}
                   </Paragraph>
                   <Divider style={{ margin: '12px 0' }} />
                   {watchedProjectContent?.trim() ? (
                     <ProjectMarkdownContent markdown={watchedProjectContent} />
                   ) : (
-                    <Text type="secondary">暂无详情正文，请在「编辑」中填写</Text>
+                    <Text type="secondary">{t('create.projectNoContent')}</Text>
                   )}
                 </div>
               )}
-              <Form.Item label="资源列表（首张为封面图）">
+              <Form.Item label={t('create.resources')}>
                 <Upload
                   listType="picture"
                   fileList={projectFileList}
@@ -549,14 +551,14 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                     size="large"
                     style={isPageMobile ? { height: 44 } : undefined}
                   >
-                    上传资源
+                    {t('create.uploadResources')}
                   </Button>
                 </Upload>
               </Form.Item>
               {isAdmin && (
                 <Form.Item
                   name="isrecommended"
-                  label="推荐到首页"
+                  label={t('create.recommend')}
                   valuePropName="checked"
                   initialValue={false}
                 >
@@ -572,7 +574,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                 icon={<Projector size={18} />}
                 style={touchBtnStyle}
               >
-                {editTarget?.kind === 'project' ? '保存项目' : '创建项目'}
+                {editTarget?.kind === 'project' ? t('create.saveProject') : t('create.createProject')}
               </Button>
             </Form>
           ),
@@ -613,12 +615,12 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
 
   const pageTitle = editTarget
     ? editTarget.kind === 'post'
-      ? '编辑动态'
-      : '编辑项目'
-    : '发布内容';
+      ? t('create.editPostTitle')
+      : t('create.editProjectTitle')
+    : t('create.publishTitle');
   const pageDesc = editTarget
-    ? '修改正文与资源后保存'
-    : '分享动态或创建项目';
+    ? t('create.editDesc')
+    : t('create.publishDesc');
 
   return (
     <>

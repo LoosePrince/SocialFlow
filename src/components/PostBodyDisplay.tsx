@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Typography, theme } from 'antd';
+import { useI18n } from '../context/I18nContext';
 
 const { Paragraph } = Typography;
 
@@ -23,6 +24,7 @@ const PostBodyDisplay: React.FC<PostBodyDisplayProps> = ({
   preventOuterClick = false,
 }) => {
   const { token } = theme.useToken();
+  const { t } = useI18n();
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [canExpand, setCanExpand] = useState(false);
@@ -114,7 +116,7 @@ const PostBodyDisplay: React.FC<PostBodyDisplayProps> = ({
             setExpanded((prev) => !prev);
           }}
         >
-          {expanded ? '收起' : '展开'}
+          {expanded ? t('common.collapse') : t('common.expand')}
         </Button>
       )}
     </div>

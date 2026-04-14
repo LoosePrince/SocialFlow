@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useNotificationCenter } from '../context/NotificationContext';
+import { useI18n } from '../context/I18nContext';
 import CreateModal from './CreateModal';
 import { GithubCdnAvatar } from './GithubCdnAvatar';
 
@@ -18,17 +19,18 @@ const Navbar: React.FC = () => {
   const location = useLocation();
   const { token } = theme.useToken();
   const screens = useBreakpoint();
+  const { t } = useI18n();
 
   const items: MenuProps['items'] = [
     {
       key: 'profile',
-      label: '个人主页',
+      label: t('nav.profile'),
       icon: <UserIcon size={16} />,
       onClick: () => navigate('/profile'),
     },
     {
       key: 'settings',
-      label: '设置',
+      label: t('nav.settings'),
       icon: <Settings size={16} />,
       onClick: () => navigate('/settings'),
     },
@@ -37,7 +39,7 @@ const Navbar: React.FC = () => {
     },
     {
       key: 'logout',
-      label: '退出登录',
+      label: t('nav.logout'),
       icon: <LogOut size={16} />,
       onClick: logout,
       danger: true,
@@ -95,7 +97,7 @@ const Navbar: React.FC = () => {
             <Input
               readOnly
               prefix={<Search size={16} style={{ color: token.colorTextDescription }} />}
-              placeholder="搜索动态、项目或用户..."
+              placeholder={t('nav.searchPlaceholder')}
               variant="filled"
               style={{ borderRadius: 20, height: 36, background: token.colorBgLayout, cursor: 'pointer' }}
               onClick={() => navigate('/search')}
@@ -121,7 +123,7 @@ const Navbar: React.FC = () => {
                   icon={<PlusCircle size={20} />}
                   onClick={() => setCreateVisible(true)}
                 >
-                  发布
+                  {t('nav.create')}
                 </Button>
               )}
             </>
@@ -142,7 +144,7 @@ const Navbar: React.FC = () => {
             ) : (
               <Link
                 to="/profile"
-                aria-label="个人主页"
+                aria-label={t('nav.profile')}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -162,7 +164,7 @@ const Navbar: React.FC = () => {
               }
               shape="round"
             >
-              登录
+              {t('nav.login')}
             </Button>
           )}
         </Flex>

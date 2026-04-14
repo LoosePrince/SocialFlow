@@ -3,6 +3,7 @@ import { Alert, App, Button, Card, Divider, Form, Input, Space, theme, Typograph
 import { Github } from 'lucide-react';
 import React, { useCallback, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../context/I18nContext';
 import { apiJson } from '../lib/api';
 import { supabase } from '../supabase';
 import QqQrModal from './QqQrModal';
@@ -21,6 +22,7 @@ const LoginPanel: React.FC<LoginPanelProps> = ({ variant = 'page', returnTo }) =
   const { login } = useAuth();
   const { token } = theme.useToken();
   const { message } = App.useApp();
+  const { t } = useI18n();
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [qqOpen, setQqOpen] = useState(false);
 
@@ -48,10 +50,10 @@ const LoginPanel: React.FC<LoginPanelProps> = ({ variant = 'page', returnTo }) =
         refresh_token: session.refresh_token,
       });
       if (error) {
-        throw new Error(error.message || '登录失败');
+        throw new Error(error.message || t('login.failed'));
       }
     } catch (error: any) {
-      message.error(error.message || '邮箱或密码错误');
+      message.error(error.message || t('login.failed'));
     } finally {
       setPasswordLoading(false);
     }
@@ -62,8 +64,8 @@ const LoginPanel: React.FC<LoginPanelProps> = ({ variant = 'page', returnTo }) =
       <Alert
         type="info"
         showIcon
-        message="第一次登录？"
-        description="请先通过 GitHub 登录以注册账户，然后在设置页中设置密码和QQ绑定以使用相应登录方式。"
+        message={t('login.alertTitle')}
+        description={t('login.alertDesc')}
         style={{ marginBottom: variant === 'modal' ? 12 : 20 }}
       />
 
@@ -83,36 +85,36 @@ const LoginPanel: React.FC<LoginPanelProps> = ({ variant = 'page', returnTo }) =
           }
         >
           <Form.Item
-            label="邮箱"
+            label={t('login.email')}
             name="email"
             rules={[
-              { required: true, message: '请输入邮箱' },
-              { type: 'email', message: '邮箱格式不正确' },
+              { required: true, message: t('login.emailRequired') },
+              { type: 'email', message: t('login.emailInvalid') },
             ]}
           >
-            <Input placeholder="请输入邮箱" autoComplete="email" />
+            <Input placeholder={t('login.email')} autoComplete="email" />
           </Form.Item>
           <Form.Item
-            label="密码"
+            label={t('login.password')}
             name="password"
-            rules={[{ required: true, message: '请输入密码' }]}
+            rules={[{ required: true, message: t('login.passwordRequired') }]}
           >
-            <Input.Password placeholder="请输入密码" autoComplete="current-password" />
+            <Input.Password placeholder={t('login.password')} autoComplete="current-password" />
           </Form.Item>
           <Button type="primary" htmlType="submit" loading={passwordLoading} block size="large">
-            登录
+            {t('login.submit')}
           </Button>
         </Form>
 
         <div style={{ textAlign: 'center', marginTop: 16 }}>
           <Space size={4}>
-            <Text type="secondary">还没有账号？</Text>
-            <Text type="secondary">先使用下方第三方登录</Text>
+            <Text type="secondary">{t('login.noAccount')}</Text>
+            <Text type="secondary">{t('login.useThirdParty')}</Text>
           </Space>
         </div>
 
         <Divider plain>
-          <Text type="secondary">其他登录方式</Text>
+          <Text type="secondary">{t('login.otherMethods')}</Text>
         </Divider>
 
         <Button
@@ -128,7 +130,7 @@ const LoginPanel: React.FC<LoginPanelProps> = ({ variant = 'page', returnTo }) =
             gap: 8,
           }}
         >
-          使用 GitHub 继续
+          {t('login.withGithub')}
         </Button>
 
         <Button
@@ -145,7 +147,7 @@ const LoginPanel: React.FC<LoginPanelProps> = ({ variant = 'page', returnTo }) =
             gap: 8,
           }}
         >
-          使用 QQ 登录
+          {t('login.withQq')}
         </Button>
       </Card>
 
@@ -161,10 +163,10 @@ const LoginPanel: React.FC<LoginPanelProps> = ({ variant = 'page', returnTo }) =
     <>
       <div style={{ textAlign: 'center', marginBottom: 28 }}>
         <Title level={2} style={{ marginBottom: 8 }}>
-          登录 SocialFlow
+          {t('login.pageTitle')}
         </Title>
         <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-          使用第三方账号快速登录
+          {t('login.pageSubTitle')}
         </Paragraph>
       </div>
       {inner}

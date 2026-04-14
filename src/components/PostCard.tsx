@@ -11,6 +11,7 @@ import LikeList from './LikeList';
 import CommentPreview from './CommentPreview';
 import PostBodyDisplay from './PostBodyDisplay';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../context/I18nContext';
 import { apiJson } from '../lib/api';
 import { toMillis } from '../lib/time';
 
@@ -30,6 +31,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
   const [liked, setLiked] = useState(false);
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
+  const { t } = useI18n();
   const { token } = theme.useToken();
   const images = post.images || [];
   const displayImages = images.slice(0, 9);
@@ -66,39 +68,39 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
         method: 'PATCH',
         body: JSON.stringify({ isrecommended: !post.isrecommended }),
       });
-      message.success(data.isrecommended ? '已推荐到首页' : '已取消推荐');
+      message.success(data.isrecommended ? t('post.recommendSuccessOn') : t('post.recommendSuccessOff'));
     } catch {
-      message.error('操作失败');
+      message.error(t('post.actionFailed'));
     }
   };
 
   const handleDelete = () => {
     modal.confirm({
-      title: '确定要删除这条动态吗？',
-      content: '删除后无法恢复',
-      okText: '删除',
+      title: t('post.deleteConfirmTitle'),
+      content: t('post.deleteConfirmContent'),
+      okText: t('post.delete'),
       okType: 'danger',
-      cancelText: '取消',
+      cancelText: t('common.cancel'),
       onOk: async () => {
         try {
           await apiJson(`/api/posts/${post.id}`, { method: 'DELETE' });
-          message.success('已删除');
+          message.success(t('post.deleted'));
         } catch {
-          message.error('删除失败');
+          message.error(t('post.deleteFailed'));
         }
       }
     });
   };
 
   const shareUrl = `${window.location.origin}/post/${post.id}`;
-  const shareMailTo = `mailto:?subject=${encodeURIComponent(`分享一条动态：${post.authorName ?? ''}`)}&body=${encodeURIComponent(shareUrl)}`;
+  const shareMailTo = `mailto:?subject=${encodeURIComponent(`${t('share.postTitle')}：${post.authorName ?? ''}`)}&body=${encodeURIComponent(shareUrl)}`;
 
   const handleCopyShareLink = async () => {
     try {
       await navigator.clipboard.writeText(shareUrl);
-      message.success('链接已复制');
+      message.success(t('share.linkCopied'));
     } catch {
-      message.error('复制失败，请手动复制');
+      message.error(t('share.copyFailed'));
     }
   };
 
@@ -138,7 +140,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
                   style={{ textAlign: 'left' }}
                   onClick={() => navigate(`/create?edit=${encodeURIComponent(post.id)}&type=post`)}
                 >
-                  编辑内容
+                  {t('post.edit')}
                 </Button>
                 {isAdmin && (
                   <Button
@@ -147,11 +149,11 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
                     onClick={toggleRecommendation}
                     style={{ textAlign: 'left' }}
                   >
-                    {post.isrecommended ? '取消推荐' : '设为推荐'}
+                    {post.isrecommended ? t('post.recommendOff') : t('post.recommendOn')}
                   </Button>
                 )}
                 <Button type="text" danger onClick={handleDelete} icon={<Trash2 size={14}/>} style={{ textAlign: 'left' }}>
-                  删除内容
+                  {t('post.delete')}
                 </Button>
               </Flex>
             } 
@@ -166,7 +168,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
       <div
         role="link"
         tabIndex={0}
-        aria-label="查看动态详情"
+        aria-label={t('post.viewDetail')}
         onClick={() => navigate(`/post/${post.id}`)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -311,7 +313,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
       </div>
 
       <Modal
-        title="分享动态"
+        title={t('share.postTitle')}
         open={shareOpen}
         onCancel={() => setShareOpen(false)}
         footer={null}
@@ -321,10 +323,10 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
           <Input value={shareUrl} readOnly />
           <Flex gap={8}>
             <Button type="primary" onClick={() => void handleCopyShareLink()}>
-              复制链接
+              {t('share.copyLink')}
             </Button>
             <Button href={shareMailTo}>
-              通过邮件分享
+              {t('share.byEmail')}
             </Button>
           </Flex>
         </Flex>

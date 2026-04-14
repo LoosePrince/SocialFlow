@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useMemo, useState } from
 import { Modal } from 'antd';
 import { useLocation, useNavigate } from 'react-router-dom';
 import LoginPanel from '../components/LoginPanel';
+import { useI18n } from './I18nContext';
 import { sanitizeReturnPath } from '../lib/navigation';
 
 type LoginModalContextValue = {
@@ -14,6 +15,7 @@ const LoginModalContext = createContext<LoginModalContextValue | undefined>(unde
 function LoginModalBody({ onClose }: { onClose: () => void }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const returnTo = useMemo(
     () => sanitizeReturnPath(location.pathname + location.search),
     [location.pathname, location.search]
@@ -32,7 +34,7 @@ function LoginModalBody({ onClose }: { onClose: () => void }) {
           }}
           style={{ fontSize: 13 }}
         >
-          前往完整登录页
+          {t('login.goFullPage')}
         </a>
       </div>
     </>
@@ -41,6 +43,7 @@ function LoginModalBody({ onClose }: { onClose: () => void }) {
 
 export const LoginModalProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [open, setOpen] = useState(false);
+  const { t } = useI18n();
 
   const openLoginModal = useCallback(() => setOpen(true), []);
   const closeLoginModal = useCallback(() => setOpen(false), []);
@@ -54,7 +57,7 @@ export const LoginModalProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     <LoginModalContext.Provider value={value}>
       {children}
       <Modal
-        title="登录"
+        title={t('login.submit')}
         open={open}
         onCancel={closeLoginModal}
         footer={null}

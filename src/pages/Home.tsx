@@ -7,6 +7,7 @@ import { motion } from 'framer-motion';
 import { HomeFeedSkeleton } from '../components/PageSkeletons';
 import { useAuth } from '../context/AuthContext';
 import { useLoginModal } from '../context/LoginModalContext';
+import { useI18n } from '../context/I18nContext';
 import { toggleLike } from '../utils';
 import CommentSection from '../components/CommentSection';
 
@@ -15,6 +16,7 @@ const Home: React.FC = () => {
   const { openLoginModal } = useLoginModal();
   const { feeds, loading } = useFeeds();
   const { message } = App.useApp();
+  const { t } = useI18n();
   const [quickCommentPostId, setQuickCommentPostId] = useState<string | null>(null);
 
   const handleLike = async (id: string, type: 'post' | 'project') => {
@@ -25,7 +27,7 @@ const Home: React.FC = () => {
     try {
       await toggleLike(id, type);
     } catch {
-      message.error('操作失败');
+      message.error(t('home.actionFailed'));
     }
   };
 
@@ -55,7 +57,7 @@ const Home: React.FC = () => {
         exit={{ opacity: 0 }}
       >
         {feeds.length === 0 ? (
-          <Empty description="暂无动态" style={{ marginTop: 100 }} />
+          <Empty description={t('home.empty')} style={{ marginTop: 100 }} />
         ) : (
           feeds.map((item) => (
             <div key={item.id}>
@@ -70,7 +72,7 @@ const Home: React.FC = () => {
       </motion.div>
 
       <Modal
-        title="快速评论"
+        title={t('home.quickComment')}
         open={quickCommentPostId !== null}
         onCancel={() => setQuickCommentPostId(null)}
         footer={null}

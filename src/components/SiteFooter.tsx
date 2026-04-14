@@ -3,6 +3,7 @@ import { Grid, Typography, theme, Flex } from 'antd';
 import { Link } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
 import { SITE_COPYRIGHT, THIRD_PARTY_LINKS } from '../siteMeta';
+import { useI18n } from '../context/I18nContext';
 
 const { Text, Link: TypographyLink } = Typography;
 const { useBreakpoint } = Grid;
@@ -10,6 +11,7 @@ const { useBreakpoint } = Grid;
 const SiteFooter: React.FC = () => {
   const screens = useBreakpoint();
   const { token } = theme.useToken();
+  const { t } = useI18n();
 
   if (!screens.md) {
     return null;
@@ -51,7 +53,7 @@ const SiteFooter: React.FC = () => {
             textDecoration: 'none',
           }}
         >
-          关于
+          {t('about.title')}
         </Link>
       </Flex>
     </footer>

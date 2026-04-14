@@ -8,6 +8,7 @@ import { GithubCdnImg } from '../components/GithubCdnImg';
 import ProjectMarkdownContent from '../components/ProjectMarkdownContent';
 import { ArrowLeft, Clock, ExternalLink, Pencil } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../context/I18nContext';
 import { getGithubUrl } from '../github';
 import CommentSection from '../components/CommentSection';
 import dayjs from 'dayjs';
@@ -21,6 +22,7 @@ const ProjectDetail: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
+  const { t } = useI18n();
   const [project, setProject] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const { token } = theme.useToken();
@@ -63,7 +65,7 @@ const ProjectDetail: React.FC = () => {
       </motion.div>
     );
   }
-  if (!project) return <div style={{ padding: '20px', textAlign: 'center' }}>项目不存在</div>;
+  if (!project) return <div style={{ padding: '20px', textAlign: 'center' }}>{t('project.notFound')}</div>;
 
   const projectTimeMs = toMillis(project.createdat);
 
@@ -84,7 +86,7 @@ const ProjectDetail: React.FC = () => {
           onClick={() => navigate(-1)}
           style={{ color: token.colorTextSecondary }}
         >
-          返回
+          {t('detail.back')}
         </Button>
         {canEditProject && (
           <Button
@@ -93,7 +95,7 @@ const ProjectDetail: React.FC = () => {
             icon={<Pencil size={16} strokeWidth={2} />}
             onClick={() => navigate(`/create?edit=${encodeURIComponent(project.id)}&type=project`)}
           >
-            编辑
+            {t('detail.edit')}
           </Button>
         )}
       </Flex>
@@ -124,7 +126,7 @@ const ProjectDetail: React.FC = () => {
         )}
         
         <div style={{ padding: screens.md ? 32 : 16 }}>
-          <Tag color={token.colorPrimary} style={{ marginBottom: 12 }}>项目方案</Tag>
+          <Tag color={token.colorPrimary} style={{ marginBottom: 12 }}>{t('project.scheme')}</Tag>
           <Title level={screens.md ? 1 : 2} style={{ marginTop: 0 }}>{project.title}</Title>
           <Paragraph type="secondary" style={{ fontSize: screens.md ? 18 : 16 }}>{project.summary}</Paragraph>
           
@@ -147,7 +149,7 @@ const ProjectDetail: React.FC = () => {
 
           {project.attachments.length > 0 && (
             <div style={{ marginTop: 40 }}>
-              <Title level={4}>附件资源</Title>
+              <Title level={4}>{t('project.attachments')}</Title>
               <Flex gap={12} wrap="wrap">
                 {project.attachments.map((url: string, idx: number) => (
                   <Button 
@@ -158,7 +160,7 @@ const ProjectDetail: React.FC = () => {
                     target="_blank"
                     style={{ borderRadius: token.borderRadius }}
                   >
-                    查看资源 {idx + 1}
+                    {t('project.viewResource')} {idx + 1}
                   </Button>
                 ))}
               </Flex>

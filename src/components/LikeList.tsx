@@ -4,6 +4,7 @@ import { GithubCdnAvatar } from './GithubCdnAvatar';
 import { getGithubUrl } from '../github';
 import { apiJson } from '../lib/api';
 import { subscribeAppEvents } from '../lib/appSse';
+import { useI18n } from '../context/I18nContext';
 
 const { Text } = Typography;
 
@@ -17,6 +18,7 @@ interface LikeListProps {
 const LikeList: React.FC<LikeListProps> = ({ contentId, contentType, alwaysShow, refreshNonce = 0 }) => {
   const [likes, setLikes] = useState<any[]>([]);
   const { token } = theme.useToken();
+  const { t } = useI18n();
 
   useEffect(() => {
     const fetchLikes = async () => {
@@ -78,7 +80,7 @@ const LikeList: React.FC<LikeListProps> = ({ contentId, contentType, alwaysShow,
         </Avatar.Group>
       )}
       <Text type="secondary" style={{ fontSize: 12 }}>
-        {likes.length} 人觉得很赞
+        {t('likes.count', { count: likes.length })}
       </Text>
     </Flex>
   );
