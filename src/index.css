@@ -54,13 +54,13 @@ a, button {
 }
 
 /* Ant Design Customization for Gradient Button */
-.ant-btn-primary:not(.ant-btn-dangerous) {
+.ant-btn-primary:not(.ant-btn-dangerous):not(:disabled):not(.ant-btn-disabled) {
   background: var(--accent-gradient) !important;
   border: none !important;
   box-shadow: 0 2px 4px rgba(0, 112, 243, 0.2);
 }
 
-.ant-btn-primary:not(.ant-btn-dangerous):hover {
+.ant-btn-primary:not(.ant-btn-dangerous):not(:disabled):not(.ant-btn-disabled):hover {
   filter: brightness(1.1);
   box-shadow: 0 4px 12px rgba(0, 112, 243, 0.3);
 }
