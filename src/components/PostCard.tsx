@@ -309,7 +309,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
         </Flex>
         
         <LikeList contentId={post.id} contentType="post" refreshNonce={likeListNonce} />
-        <CommentPreview contentId={post.id} />
+        <CommentPreview contentId={post.id} contentType="post" />
       </div>
 
       <Modal

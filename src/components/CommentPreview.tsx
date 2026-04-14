@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Typography, theme, Modal } from 'antd';
 import { apiJson } from '../lib/api';
 import { useI18n } from '../context/I18nContext';
@@ -8,103 +8,91 @@ const { Text } = Typography;
 
 interface CommentPreviewProps {
   contentId: string;
+  contentType?: 'post' | 'project';
 }
 
-const CommentPreview: React.FC<CommentPreviewProps> = ({ contentId }) => {
-  const [latestComment, setLatestComment] = useState<any>(null);
-  const [isOverflow, setIsOverflow] = useState(false);
+const CommentPreview: React.FC<CommentPreviewProps> = ({ contentId, contentType = 'post' }) => {
+  const [comments, setComments] = useState<Array<{ profiles?: { displayname?: string }; text?: string }>>([]);
+  const [selectedComment, setSelectedComment] = useState<{ profiles?: { displayname?: string }; text?: string } | null>(null);
   const [openFull, setOpenFull] = useState(false);
   const { token } = theme.useToken();
   const { t } = useI18n();
-  const textWrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const fetchLatest = async () => {
+    const fetchComments = async () => {
       try {
-        const data = await apiJson<{
-          profiles?: { displayname?: string };
-          text?: string;
-        } | null>(`/api/comments/latest?contentId=${encodeURIComponent(contentId)}`);
-        setLatestComment(data);
+        const data = await apiJson<Array<{ profiles?: { displayname?: string }; text?: string }>>(
+          `/api/comments?contentId=${encodeURIComponent(contentId)}&contentType=${encodeURIComponent(contentType)}`
+        );
+        setComments(Array.isArray(data) ? data.slice(0, 5) : []);
       } catch {
-        setLatestComment(null);
+        setComments([]);
       }
     };
 
-    void fetchLatest();
-  }, [contentId]);
+    void fetchComments();
+  }, [contentId, contentType]);
 
-  useEffect(() => {
-    const el = textWrapRef.current;
-    if (!el || !latestComment?.text) {
-      setIsOverflow(false);
-      return;
-    }
-
-    const measure = () => {
-      setIsOverflow(el.scrollWidth > el.clientWidth + 1);
-    };
-    measure();
-
-    if (typeof ResizeObserver === 'undefined') {
-      return;
-    }
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [latestComment?.text]);
-
-  if (!latestComment) return null;
+  if (comments.length === 0) return null;
 
   return (
     <>
       <div
-        role={isOverflow ? 'button' : undefined}
-        tabIndex={isOverflow ? 0 : undefined}
-        onClick={() => {
-          if (isOverflow) {
-            setOpenFull(true);
-          }
-        }}
-        onKeyDown={(e) => {
-          if (!isOverflow) {
-            return;
-          }
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            setOpenFull(true);
-          }
-        }}
-        style={{ 
-          background: token.colorFillAlter, 
-          padding: '6px 12px', 
-          borderRadius: '8px',
-          marginTop: '8px',
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '8px',
-          maxWidth: '100%',
-          transition: 'all 0.2s',
-          cursor: isOverflow ? 'pointer' : 'default',
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          gap: 8,
+          marginTop: 8,
         }}
       >
-        <Text strong style={{ fontSize: '13px', color: token.colorText, whiteSpace: 'nowrap' }}>
-          {latestComment.profiles?.displayname}
-        </Text>
-        <div
-          ref={textWrapRef}
-          style={{
-            fontSize: '13px',
-            color: token.colorTextDescription,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            minWidth: 0,
-            flex: 1,
-          }}
-        >
-          <CommentText text={latestComment.text ?? ''} singleLine />
-        </div>
+        {comments.map((comment, index) => (
+          <div
+            key={`${comment.profiles?.displayname ?? 'u'}-${index}-${comment.text ?? ''}`}
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              setSelectedComment(comment);
+              setOpenFull(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setSelectedComment(comment);
+                setOpenFull(true);
+              }
+            }}
+            style={{
+              background: token.colorFillAlter,
+              padding: '6px 12px',
+              borderRadius: '8px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              width: 'fit-content',
+              maxWidth: '100%',
+              transition: 'all 0.2s',
+              cursor: 'pointer',
+            }}
+          >
+            <Text strong style={{ fontSize: '13px', color: token.colorText, whiteSpace: 'nowrap' }}>
+              {comment.profiles?.displayname}
+            </Text>
+            <div
+              style={{
+                fontSize: '13px',
+                color: token.colorTextDescription,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                minWidth: 0,
+                flex: 1,
+              }}
+            >
+              <CommentText text={comment.text ?? ''} singleLine />
+            </div>
+          </div>
+        ))}
       </div>
 
       <Modal
@@ -116,9 +104,9 @@ const CommentPreview: React.FC<CommentPreviewProps> = ({ contentId }) => {
       >
         <div style={{ lineHeight: 1.6, color: token.colorText }}>
           <Text strong style={{ marginRight: 8 }}>
-            {latestComment.profiles?.displayname}
+            {selectedComment?.profiles?.displayname}
           </Text>
-          <CommentText text={latestComment.text ?? ''} />
+          <CommentText text={selectedComment?.text ?? ''} />
         </div>
       </Modal>
     </>
