@@ -1,8 +1,8 @@
-import React from 'react';
-import { Card, Tag, Space, Button, App, Popover, Flex, Typography, theme } from 'antd';
+import React, { useState } from 'react';
+import { Card, Tag, Space, Button, App, Popover, Flex, Typography, theme, Modal, Input } from 'antd';
 import { GithubCdnAvatar } from './GithubCdnAvatar';
 import { GithubCdnImg } from './GithubCdnImg';
-import { Rocket, Clock, MessageSquare, MoreHorizontal, ShieldCheck, Pencil, Heart } from 'lucide-react';
+import { Rocket, Clock, MessageSquare, MoreHorizontal, ShieldCheck, Pencil, Heart, Share2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { apiJson } from '../lib/api';
@@ -20,6 +20,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
   const { user, isAdmin } = useAuth();
   const { message, modal } = App.useApp();
   const { token } = theme.useToken();
+  const [shareOpen, setShareOpen] = useState(false);
 
   const isOwner = user?.id === project.authorid;
   const canManage = isAdmin || isOwner;
@@ -55,6 +56,18 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
         }
       }
     });
+  };
+
+  const shareUrl = `${window.location.origin}/project/${project.id}`;
+  const shareMailTo = `mailto:?subject=${encodeURIComponent(`分享一个项目：${project.title ?? ''}`)}&body=${encodeURIComponent(shareUrl)}`;
+
+  const handleCopyShareLink = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      message.success('链接已复制');
+    } catch {
+      message.error('复制失败，请手动复制');
+    }
   };
 
   return (
@@ -103,6 +116,16 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
         <Flex justify="center" align="center" gap={4} onClick={() => navigate(`/project/${project.id}`)} style={{ cursor: 'pointer' }}>
           <MessageSquare size={14} />
           <Text type="secondary" style={{ fontSize: 12 }}>{(project.commentcount ?? project.commentCount) || 0}</Text>
+        </Flex>,
+        <Flex
+          justify="center"
+          align="center"
+          gap={4}
+          onClick={() => setShareOpen(true)}
+          style={{ cursor: 'pointer' }}
+        >
+          <Share2 size={14} />
+          <Text type="secondary" style={{ fontSize: 12 }}>分享</Text>
         </Flex>,
         canManage ? (
           <Popover
@@ -173,6 +196,26 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
           </div>
         }
       />
+
+      <Modal
+        title="分享项目"
+        open={shareOpen}
+        onCancel={() => setShareOpen(false)}
+        footer={null}
+        destroyOnHidden
+      >
+        <Flex vertical gap={12}>
+          <Input value={shareUrl} readOnly />
+          <Flex gap={8}>
+            <Button type="primary" onClick={() => void handleCopyShareLink()}>
+              复制链接
+            </Button>
+            <Button href={shareMailTo}>
+              通过邮件分享
+            </Button>
+          </Flex>
+        </Flex>
+      </Modal>
     </Card>
   );
 };

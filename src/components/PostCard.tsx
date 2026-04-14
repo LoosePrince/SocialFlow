@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Space, Button, Popover, App, Flex, Typography, theme, Card, Modal } from 'antd';
+import { Space, Button, Popover, App, Flex, Typography, theme, Card, Modal, Input } from 'antd';
 import { GithubCdnAvatar } from './GithubCdnAvatar';
 import SmartFeedImage from './SmartFeedImage';
 import { Heart, MessageCircle, Share2, MoreHorizontal, ShieldCheck, Trash2, Pencil } from 'lucide-react';
@@ -35,6 +35,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
   const displayImages = images.slice(0, 9);
   const remainingCount = images.length - 9;
   const { message, modal } = App.useApp();
+  const [shareOpen, setShareOpen] = useState(false);
 
   const isOwner = user?.id === post.authorid;
   const canManage = isAdmin || isOwner;
@@ -87,6 +88,18 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
         }
       }
     });
+  };
+
+  const shareUrl = `${window.location.origin}/post/${post.id}`;
+  const shareMailTo = `mailto:?subject=${encodeURIComponent(`分享一条动态：${post.authorName ?? ''}`)}&body=${encodeURIComponent(shareUrl)}`;
+
+  const handleCopyShareLink = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      message.success('链接已复制');
+    } catch {
+      message.error('复制失败，请手动复制');
+    }
   };
 
   return (
@@ -283,6 +296,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
           <Button 
             type="text" 
             icon={<Share2 size={18} />} 
+            onClick={() => setShareOpen(true)}
             style={{ color: token.colorTextDescription }} 
           />
         </Flex>
@@ -290,6 +304,26 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
         <LikeList contentId={post.id} contentType="post" refreshNonce={likeListNonce} />
         <CommentPreview contentId={post.id} />
       </div>
+
+      <Modal
+        title="分享动态"
+        open={shareOpen}
+        onCancel={() => setShareOpen(false)}
+        footer={null}
+        destroyOnHidden
+      >
+        <Flex vertical gap={12}>
+          <Input value={shareUrl} readOnly />
+          <Flex gap={8}>
+            <Button type="primary" onClick={() => void handleCopyShareLink()}>
+              复制链接
+            </Button>
+            <Button href={shareMailTo}>
+              通过邮件分享
+            </Button>
+          </Flex>
+        </Flex>
+      </Modal>
     </Card>
   );
 };

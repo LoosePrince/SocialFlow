@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiJson } from '../lib/api';
-import { Typography, Button, Card, theme, Flex } from 'antd';
+import { Typography, Button, Card, theme, Flex, Grid } from 'antd';
 import { PostDetailPageSkeleton } from '../components/PageSkeletons';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
 import SmartFeedImage from '../components/SmartFeedImage';
@@ -15,6 +15,7 @@ import { toMillis } from '../lib/time';
 import { motion } from 'framer-motion';
 
 const { Title, Text } = Typography;
+const { useBreakpoint } = Grid;
 
 const PostDetail: React.FC = () => {
   const { id } = useParams();
@@ -23,6 +24,7 @@ const PostDetail: React.FC = () => {
   const [post, setPost] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const { token } = theme.useToken();
+  const screens = useBreakpoint();
   const canEditPost = post && (isAdmin || user?.id === post.authorid);
 
   useEffect(() => {
@@ -97,7 +99,7 @@ const PostDetail: React.FC = () => {
           borderRadius: token.borderRadiusLG,
           marginBottom: 24
         }}
-        styles={{ body: { padding: 32 } }}
+        styles={{ body: { padding: screens.md ? 32 : 16 } }}
       >
         <Flex align="start" gap={16} style={{ marginBottom: 24 }}>
           <GithubCdnAvatar 
@@ -124,7 +126,7 @@ const PostDetail: React.FC = () => {
         </Flex>
 
         <div style={{ marginBottom: 24 }}>
-          <PostBodyDisplay text={post.content ?? ''} fontSize={18} />
+          <PostBodyDisplay text={post.content ?? ''} fontSize={screens.md ? 18 : 16} />
         </div>
         
         {post.images && post.images.length > 0 && (
