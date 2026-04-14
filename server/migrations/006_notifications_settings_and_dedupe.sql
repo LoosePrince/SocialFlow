@@ -20,21 +20,47 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_unique_event
 ON public.notifications (touserid, type, eventkey)
 WHERE eventkey <> '';
 
-CREATE TABLE IF NOT EXISTS public.notification_settings (
-  userid uuid PRIMARY KEY REFERENCES public.profiles (id) ON DELETE CASCADE,
-  receive_recommend boolean NOT NULL DEFAULT true,
-  alert_recommend boolean NOT NULL DEFAULT true,
-  receive_like boolean NOT NULL DEFAULT true,
-  alert_like boolean NOT NULL DEFAULT true,
-  receive_comment boolean NOT NULL DEFAULT true,
-  alert_comment boolean NOT NULL DEFAULT true,
-  receive_reply boolean NOT NULL DEFAULT true,
-  alert_reply boolean NOT NULL DEFAULT true,
-  receive_delete boolean NOT NULL DEFAULT true,
-  alert_delete boolean NOT NULL DEFAULT true,
-  receive_mention boolean NOT NULL DEFAULT true,
-  alert_mention boolean NOT NULL DEFAULT true,
-  updatedat bigint NOT NULL DEFAULT (extract(epoch from now())::bigint * 1000)
-);
+DO $$
+DECLARE
+  profile_id_udt text;
+  profile_id_type text;
+BEGIN
+  SELECT udt_name
+  INTO profile_id_udt
+  FROM information_schema.columns
+  WHERE table_schema = 'public'
+    AND table_name = 'profiles'
+    AND column_name = 'id'
+  LIMIT 1;
+
+  profile_id_type := CASE WHEN profile_id_udt = 'uuid' THEN 'uuid' ELSE 'text' END;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public'
+      AND table_name = 'notification_settings'
+  ) THEN
+    EXECUTE format(
+      'CREATE TABLE public.notification_settings (userid %s PRIMARY KEY REFERENCES public.profiles (id) ON DELETE CASCADE)',
+      profile_id_type
+    );
+  END IF;
+END $$;
+
+ALTER TABLE public.notification_settings
+  ADD COLUMN IF NOT EXISTS receive_recommend boolean NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS alert_recommend boolean NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS receive_like boolean NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS alert_like boolean NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS receive_comment boolean NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS alert_comment boolean NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS receive_reply boolean NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS alert_reply boolean NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS receive_delete boolean NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS alert_delete boolean NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS receive_mention boolean NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS alert_mention boolean NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS updatedat bigint NOT NULL DEFAULT (extract(epoch from now())::bigint * 1000);
 
 COMMENT ON TABLE public.notification_settings IS '用户通知偏好：每类通知独立控制接收与提醒。';

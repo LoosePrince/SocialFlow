@@ -72,20 +72,13 @@ export async function runMigrations(sql: postgres.Sql): Promise<void> {
     ) AS migration_table_present
   `;
   const hasMeta = (metaRows[0] as { migration_table_present: boolean }).migration_table_present;
-  if (!hasMeta) {
-    await sql`
-      CREATE TABLE app_schema_migrations (
-        version text PRIMARY KEY,
-        applied_at timestamptz NOT NULL DEFAULT now()
-      )
-    `;
-    console.log('[db] 已创建 app_schema_migrations（首次运行）');
-  }
-
-  const appliedRows = await sql`SELECT version FROM app_schema_migrations`;
-  const applied = new Set(
-    (appliedRows as unknown as { version: string }[]).map((r) => r.version)
-  );
+  const profilesRows = await sql`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'profiles'
+    ) AS profiles_present
+  `;
+  const hasProfiles = (profilesRows[0] as { profiles_present: boolean }).profiles_present;
 
   const dir = migrationsDir();
   let files: string[];
@@ -98,18 +91,57 @@ export async function runMigrations(sql: postgres.Sql): Promise<void> {
     throw e;
   }
 
-  const pending = files.filter((f) => !applied.has(f));
+  if (files.length === 0) {
+    console.warn('[db] 迁移目录中没有 .sql 文件');
+  }
 
-  console.log(`[db] 迁移目录: ${dir}`);
-  console.log(`[db] 脚本文件: ${files.length} 个；已应用: ${applied.size} 个；待执行: ${pending.length} 个`);
-  if (pending.length > 0) {
-    for (const f of pending) {
-      console.log(`[db]   · 待执行: ${f}`);
+  if (!hasMeta) {
+    await sql`
+      CREATE TABLE app_schema_migrations (
+        version text PRIMARY KEY,
+        applied_at timestamptz NOT NULL DEFAULT now()
+      )
+    `;
+    console.log('[db] 已创建 app_schema_migrations（首次运行）');
+
+    // 全新库：仅执行基线脚本（001），并登记所有迁移为已应用，避免逐个回放历史迁移。
+    if (!hasProfiles) {
+      const baseline = files.find((f) => f.startsWith('001_'));
+      if (!baseline) {
+        throw new Error('[db] 未找到基线脚本（期望 001_*.sql）');
+      }
+      const baselinePath = path.join(dir, baseline);
+      console.log(`[db] 检测到全新库，执行基线初始化: ${baseline}`);
+      await sql.begin(async (tx) => {
+        await tx.file(baselinePath);
+        for (const f of files) {
+          await tx`
+            INSERT INTO app_schema_migrations (version)
+            VALUES (${f})
+            ON CONFLICT (version) DO NOTHING
+          `;
+        }
+      });
+      console.log('[db] 已完成基线初始化并登记全部迁移版本');
+      await verifyCoreTables(sql);
+      return;
     }
   }
 
-  if (files.length === 0) {
-    console.warn('[db] 迁移目录中没有 .sql 文件');
+  const appliedRows = await sql`SELECT version FROM app_schema_migrations`;
+  const applied = new Set(
+    (appliedRows as unknown as { version: string }[]).map((r) => r.version)
+  );
+  const pendingAfterMeta = files.filter((f) => !applied.has(f));
+
+  console.log(`[db] 迁移目录: ${dir}`);
+  console.log(
+    `[db] 脚本文件: ${files.length} 个；已应用: ${applied.size} 个；待执行: ${pendingAfterMeta.length} 个`
+  );
+  if (pendingAfterMeta.length > 0) {
+    for (const f of pendingAfterMeta) {
+      console.log(`[db]   · 待执行: ${f}`);
+    }
   }
 
   for (const file of files) {
@@ -124,7 +156,7 @@ export async function runMigrations(sql: postgres.Sql): Promise<void> {
     console.log(`[db] 已完成迁移: ${file}`);
   }
 
-  if (pending.length === 0 && files.length > 0) {
+  if (pendingAfterMeta.length === 0 && files.length > 0) {
     console.log('[db] 数据库结构已是最新（无待执行迁移）');
   }
 
