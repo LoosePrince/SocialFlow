@@ -13,6 +13,8 @@ interface UserProfile {
   createdat: number;
   /** 绑定后的 QQ uin，未绑定时可能为空或缺省 */
   qq_uin?: string | null;
+  /** 是否已设置账号密码 */
+  haspassword?: boolean;
 }
 
 interface AuthContextType {

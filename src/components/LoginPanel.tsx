@@ -1,8 +1,10 @@
 import { QqOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Divider, Form, Input, Space, theme, Typography } from 'antd';
+import { Alert, App, Button, Card, Divider, Form, Input, Space, theme, Typography } from 'antd';
 import { Github } from 'lucide-react';
 import React, { useCallback, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { apiJson } from '../lib/api';
+import { supabase } from '../supabase';
 import QqQrModal from './QqQrModal';
 
 const { Title, Text, Paragraph } = Typography;
@@ -18,6 +20,8 @@ export interface LoginPanelProps {
 const LoginPanel: React.FC<LoginPanelProps> = ({ variant = 'page', returnTo }) => {
   const { login } = useAuth();
   const { token } = theme.useToken();
+  const { message } = App.useApp();
+  const [passwordLoading, setPasswordLoading] = useState(false);
   const [qqOpen, setQqOpen] = useState(false);
 
   const handleGithub = () => {
@@ -26,13 +30,40 @@ const LoginPanel: React.FC<LoginPanelProps> = ({ variant = 'page', returnTo }) =
 
   const closeQq = useCallback(() => setQqOpen(false), []);
 
+  const handlePasswordLogin = async (values: { email: string; password: string }) => {
+    setPasswordLoading(true);
+    try {
+      const session = await apiJson<{
+        access_token: string;
+        refresh_token: string;
+      }>('/api/auth/password-login', {
+        method: 'POST',
+        body: JSON.stringify({
+          email: values.email.trim(),
+          password: values.password,
+        }),
+      });
+      const { error } = await supabase.auth.setSession({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+      });
+      if (error) {
+        throw new Error(error.message || '登录失败');
+      }
+    } catch (error: any) {
+      message.error(error.message || '邮箱或密码错误');
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
   const inner = (
     <>
       <Alert
         type="info"
         showIcon
-        message="邮箱与密码登录、注册暂未开放"
-        description="若需账号密码方式，请等待后续版本。首次请使用 GitHub 登录。"
+        message="第一次登录？"
+        description="请先通过 GitHub 登录以注册账户，然后在设置页中设置密码和QQ绑定以使用相应登录方式。"
         style={{ marginBottom: variant === 'modal' ? 12 : 20 }}
       />
 
@@ -44,14 +75,31 @@ const LoginPanel: React.FC<LoginPanelProps> = ({ variant = 'page', returnTo }) =
           border: variant === 'page' ? `1px solid ${token.colorBorderSecondary}` : 'none',
         }}
       >
-        <Form layout="vertical" requiredMark={false}>
-          <Form.Item label="邮箱">
-            <Input disabled placeholder="暂未开放" autoComplete="off" />
+        <Form
+          layout="vertical"
+          requiredMark={false}
+          onFinish={(values) =>
+            void handlePasswordLogin(values as { email: string; password: string })
+          }
+        >
+          <Form.Item
+            label="邮箱"
+            name="email"
+            rules={[
+              { required: true, message: '请输入邮箱' },
+              { type: 'email', message: '邮箱格式不正确' },
+            ]}
+          >
+            <Input placeholder="请输入邮箱" autoComplete="email" />
           </Form.Item>
-          <Form.Item label="密码">
-            <Input.Password disabled placeholder="暂未开放" autoComplete="off" />
+          <Form.Item
+            label="密码"
+            name="password"
+            rules={[{ required: true, message: '请输入密码' }]}
+          >
+            <Input.Password placeholder="请输入密码" autoComplete="current-password" />
           </Form.Item>
-          <Button type="primary" block size="large" disabled>
+          <Button type="primary" htmlType="submit" loading={passwordLoading} block size="large">
             登录
           </Button>
         </Form>
@@ -59,7 +107,7 @@ const LoginPanel: React.FC<LoginPanelProps> = ({ variant = 'page', returnTo }) =
         <div style={{ textAlign: 'center', marginTop: 16 }}>
           <Space size={4}>
             <Text type="secondary">还没有账号？</Text>
-            <Text type="secondary">注册（暂未开放）</Text>
+            <Text type="secondary">先使用下方第三方登录</Text>
           </Space>
         </div>
 

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Card, Tag, Space, Button, App, Popover, Flex, Typography, theme, Modal, Input } from 'antd';
 import { GithubCdnAvatar } from './GithubCdnAvatar';
 import { GithubCdnImg } from './GithubCdnImg';
-import { Rocket, Clock, MessageSquare, MoreHorizontal, ShieldCheck, Pencil, Heart, Share2 } from 'lucide-react';
+import { Rocket, Clock, MessageSquare, MoreHorizontal, ShieldCheck, Pencil, Heart, Share2, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { apiJson } from '../lib/api';
@@ -141,14 +141,25 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
                     navigate(`/create?edit=${encodeURIComponent(project.id)}&type=project`);
                   }}
                 >
-                  编辑
+                  编辑内容
                 </Button>
                 {isAdmin && (
-                  <Button type="text" onClick={toggleRecommendation} style={{ textAlign: 'left' }}>
-                    {project.isrecommended ? '取消推荐' : '推荐到首页'}
+                  <Button
+                    type="text"
+                    icon={<ShieldCheck size={14} />}
+                    onClick={toggleRecommendation}
+                    style={{ textAlign: 'left' }}
+                  >
+                    {project.isrecommended ? '取消推荐' : '设为推荐'}
                   </Button>
                 )}
-                <Button type="text" danger onClick={handleDelete} style={{ textAlign: 'left' }}>
+                <Button
+                  type="text"
+                  danger
+                  icon={<Trash2 size={14} />}
+                  onClick={handleDelete}
+                  style={{ textAlign: 'left' }}
+                >
                   删除内容
                 </Button>
               </Flex>

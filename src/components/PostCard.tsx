@@ -138,11 +138,16 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
                   style={{ textAlign: 'left' }}
                   onClick={() => navigate(`/create?edit=${encodeURIComponent(post.id)}&type=post`)}
                 >
-                  编辑
+                  编辑内容
                 </Button>
                 {isAdmin && (
-                  <Button type="text" onClick={toggleRecommendation} style={{ textAlign: 'left' }}>
-                    {post.isrecommended ? '取消推荐' : '推荐到首页'}
+                  <Button
+                    type="text"
+                    icon={<ShieldCheck size={14} />}
+                    onClick={toggleRecommendation}
+                    style={{ textAlign: 'left' }}
+                  >
+                    {post.isrecommended ? '取消推荐' : '设为推荐'}
                   </Button>
                 )}
                 <Button type="text" danger onClick={handleDelete} icon={<Trash2 size={14}/>} style={{ textAlign: 'left' }}>

@@ -17,6 +17,7 @@ import { broadcastSse, registerSseClient } from './sse.js';
 import { uploadBufferToGithub } from './githubUpload.js';
 import { queryQqScanStatus, requestQqLoginCode } from './qqDevToolAuth.js';
 import { issueSupabaseSessionForEmail } from './supabaseIssueSession.js';
+import { hashPassword, validatePasswordStrength, verifyPassword } from './passwordAuth.js';
 
 const PORT = Number(process.env.PORT) || 8787;
 
@@ -27,6 +28,30 @@ const UUID_RE =
 
 type Variables = { user: AuthUser };
 const app = new Hono<{ Variables: Variables }>();
+
+type ProfileRow = {
+  id: string;
+  email: string;
+  displayname: string;
+  photourl: string;
+  role: string;
+  createdat: string | number;
+  qq_uin?: string | null;
+  passwordhash?: string | null;
+};
+
+function toPublicProfile(row: ProfileRow) {
+  return {
+    id: row.id,
+    email: row.email,
+    displayname: row.displayname,
+    photourl: row.photourl,
+    role: row.role,
+    createdat: Number(row.createdat),
+    qq_uin: row.qq_uin ?? null,
+    haspassword: !!row.passwordhash,
+  };
+}
 
 app.use(
   '*',
@@ -43,19 +68,10 @@ app.get('/health', (c) => c.json({ ok: true }));
 app.get('/api/me', authMiddleware, async (c) => {
   const user = c.get('user');
   const existingRows = await sql`SELECT * FROM profiles WHERE id = ${user.sub} LIMIT 1`;
-  const existing = existingRows[0] as
-    | {
-        id: string;
-        email: string;
-        displayname: string;
-        photourl: string;
-        role: string;
-        createdat: string | number;
-      }
-    | undefined;
+  const existing = existingRows[0] as ProfileRow | undefined;
 
   if (existing) {
-    return c.json(existing);
+    return c.json(toPublicProfile(existing));
   }
 
   const { displayname, photourl, email } = metadataFromJwt(user);
@@ -69,9 +85,8 @@ app.get('/api/me', authMiddleware, async (c) => {
       email = EXCLUDED.email
     RETURNING *
   `;
-  const created = createdRows[0];
-
-  return c.json(created);
+  const created = createdRows[0] as ProfileRow;
+  return c.json(toPublicProfile(created));
 });
 
 // ---------- QQ 扫码（devtoolAuth，与 PF-MCDR-WebUI qq_qr_login_service 同源接口）----------
@@ -184,6 +199,76 @@ app.get('/api/qq/login/poll', async (c) => {
   }
 });
 
+// ---------- password auth ----------
+app.get('/api/auth/password/status', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const rows = await sql`
+    SELECT email, passwordhash FROM profiles WHERE id = ${user.sub} LIMIT 1
+  `;
+  const row = rows[0] as { email?: string; passwordhash?: string | null } | undefined;
+  if (!row?.email) {
+    return c.json({ error: '用户不存在' }, 404);
+  }
+  return c.json({
+    email: row.email,
+    hasPassword: !!row.passwordhash,
+  });
+});
+
+app.post('/api/auth/password', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json<{ currentPassword?: string; newPassword?: string }>();
+  const newPassword = body.newPassword?.trim() ?? '';
+  const reason = validatePasswordStrength(newPassword);
+  if (reason) {
+    return c.json({ error: reason }, 400);
+  }
+
+  const rows = await sql`
+    SELECT passwordhash FROM profiles WHERE id = ${user.sub} LIMIT 1
+  `;
+  const row = rows[0] as { passwordhash?: string | null } | undefined;
+  if (!row) {
+    return c.json({ error: '用户不存在' }, 404);
+  }
+
+  if (row.passwordhash) {
+    const currentPassword = body.currentPassword ?? '';
+    if (!currentPassword || !verifyPassword(currentPassword, row.passwordhash)) {
+      return c.json({ error: '当前密码错误' }, 401);
+    }
+  }
+
+  const nextHash = hashPassword(newPassword);
+  await sql`UPDATE profiles SET passwordhash = ${nextHash} WHERE id = ${user.sub}`;
+  return c.json({ ok: true, hasPassword: true });
+});
+
+app.post('/api/auth/password-login', async (c) => {
+  const body = await c.req.json<{ email?: string; password?: string }>();
+  const email = body.email?.trim().toLowerCase() ?? '';
+  const password = body.password ?? '';
+  if (!email || !password) {
+    return c.json({ error: '邮箱和密码不能为空' }, 400);
+  }
+
+  const rows = await sql`
+    SELECT email, passwordhash FROM profiles WHERE lower(email) = ${email} LIMIT 1
+  `;
+  const row = rows[0] as { email?: string; passwordhash?: string | null } | undefined;
+  if (!row?.email || !row.passwordhash || !verifyPassword(password, row.passwordhash)) {
+    return c.json({ error: '邮箱或密码错误' }, 401);
+  }
+
+  try {
+    const session = await issueSupabaseSessionForEmail(row.email);
+    return c.json(session);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'password login failed';
+    return c.json({ error: msg }, 502);
+  }
+});
+
 // ---------- feeds ----------
 app.get('/api/feeds', async (c) => {
   const showAll = c.req.query('showAll') === 'true' || c.req.query('showAll') === '1';
@@ -287,7 +372,7 @@ app.patch('/api/profile', authMiddleware, async (c) => {
     await sql`UPDATE profiles SET photourl = ${body.photourl} WHERE id = ${user.sub}`;
   }
   const [row] = await sql`SELECT * FROM profiles WHERE id = ${user.sub} LIMIT 1`;
-  return c.json(row);
+  return c.json(toPublicProfile(row as ProfileRow));
 });
 
 // ---------- posts CRUD ----------

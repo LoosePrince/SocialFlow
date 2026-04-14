@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Typography, Card, Switch, List, Button, Input, Form, Divider, App, Upload } from 'antd';
+import { Typography, Card, Switch, List, Button, Input, Form, Divider, App, Upload, Modal } from 'antd';
 import { QqOutlined } from '@ant-design/icons';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
 import QqQrModal from '../components/QqQrModal';
-import { Moon, Save, LogOut, Camera, Info } from 'lucide-react';
+import { Moon, Save, LogOut, Camera, Info, KeyRound } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -18,8 +18,12 @@ const Settings: React.FC = () => {
   const { user, profile, logout, refreshProfile } = useAuth();
   const { mode, toggleTheme } = useTheme();
   const [form] = Form.useForm();
+  const [passwordForm] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [qqModalOpen, setQqModalOpen] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [hasPassword, setHasPassword] = useState<boolean>(false);
   const { message } = App.useApp();
 
   const onQqBindDone = useCallback(() => {
@@ -34,6 +38,21 @@ const Settings: React.FC = () => {
       });
     }
   }, [profile, form]);
+
+  const fetchPasswordStatus = useCallback(async () => {
+    try {
+      const status = await apiJson<{ hasPassword: boolean }>('/api/auth/password/status');
+      setHasPassword(status.hasPassword);
+    } catch {
+      setHasPassword(!!profile?.haspassword);
+    }
+  }, [profile?.haspassword]);
+
+  useEffect(() => {
+    if (user) {
+      void fetchPasswordStatus();
+    }
+  }, [fetchPasswordStatus, user]);
 
   const handleUpdateProfile = async (values: any) => {
     if (!user) return;
@@ -71,6 +90,28 @@ const Settings: React.FC = () => {
       setLoading(false);
     }
     return false;
+  };
+
+  const openPasswordModal = () => {
+    passwordForm.resetFields();
+    setPasswordModalOpen(true);
+  };
+
+  const handleSavePassword = async (values: { currentPassword?: string; newPassword: string }) => {
+    setPasswordSaving(true);
+    try {
+      await apiJson('/api/auth/password', {
+        method: 'POST',
+        body: JSON.stringify(values),
+      });
+      setHasPassword(true);
+      setPasswordModalOpen(false);
+      message.success(hasPassword ? '密码已更新' : '密码已设置');
+    } catch (error: any) {
+      message.error(error.message || '保存密码失败');
+    } finally {
+      setPasswordSaving(false);
+    }
   };
 
   return (
@@ -120,6 +161,22 @@ const Settings: React.FC = () => {
             保存修改
           </Button>
         </Form>
+      </Card>
+
+      <Title level={4} style={{ marginTop: 32 }}>账号安全</Title>
+      <Card className="card" style={{ marginTop: 12 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16 }}>
+          <div style={{ flex: '1 1 240px' }}>
+            <Text strong>密码登录</Text>
+            <br />
+            <Text type="secondary">
+              {hasPassword ? '已设置密码，可使用邮箱 + 密码登录' : '未设置密码，设置后可使用邮箱 + 密码登录'}
+            </Text>
+          </div>
+          <Button type="primary" icon={<KeyRound size={16} />} onClick={openPasswordModal}>
+            {hasPassword ? '管理密码' : '设置密码'}
+          </Button>
+        </div>
       </Card>
 
       <Title level={4} style={{ marginTop: 32 }}>账号绑定</Title>
@@ -178,6 +235,63 @@ const Settings: React.FC = () => {
       <Button danger type="dashed" icon={<LogOut size={18} />} block size="large" onClick={logout}>
         退出登录
       </Button>
+
+      <Modal
+        title={hasPassword ? '管理密码' : '设置密码'}
+        open={passwordModalOpen}
+        onCancel={() => setPasswordModalOpen(false)}
+        onOk={() => passwordForm.submit()}
+        confirmLoading={passwordSaving}
+        okText="保存"
+        cancelText="取消"
+        destroyOnHidden
+      >
+        <Form
+          form={passwordForm}
+          layout="vertical"
+          onFinish={(values) =>
+            void handleSavePassword(values as { currentPassword?: string; newPassword: string })
+          }
+        >
+          {hasPassword && (
+            <Form.Item
+              name="currentPassword"
+              label="当前密码"
+              rules={[{ required: true, message: '请输入当前密码' }]}
+            >
+              <Input.Password placeholder="请输入当前密码" autoComplete="current-password" />
+            </Form.Item>
+          )}
+          <Form.Item
+            name="newPassword"
+            label="新密码"
+            rules={[
+              { required: true, message: '请输入新密码' },
+              { min: 8, message: '密码至少 8 位' },
+            ]}
+          >
+            <Input.Password placeholder="至少 8 位" autoComplete="new-password" />
+          </Form.Item>
+          <Form.Item
+            name="confirmPassword"
+            label="确认新密码"
+            dependencies={['newPassword']}
+            rules={[
+              { required: true, message: '请再次输入新密码' },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!value || getFieldValue('newPassword') === value) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(new Error('两次输入的密码不一致'));
+                },
+              }),
+            ]}
+          >
+            <Input.Password placeholder="再次输入新密码" autoComplete="new-password" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </motion.div>
   );
 };
