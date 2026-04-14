@@ -9,6 +9,7 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
 import LikeList from './LikeList';
 import CommentPreview from './CommentPreview';
+import PostBodyDisplay from './PostBodyDisplay';
 import { useAuth } from '../context/AuthContext';
 import { apiJson } from '../lib/api';
 import { toMillis } from '../lib/time';
@@ -16,7 +17,7 @@ import { toMillis } from '../lib/time';
 dayjs.extend(relativeTime);
 dayjs.locale('zh-cn');
 
-const { Text, Paragraph } = Typography;
+const { Text } = Typography;
 
 interface PostCardProps {
   post: any;
@@ -162,17 +163,14 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
           borderRadius: token.borderRadiusSM,
         }}
       >
-        <Paragraph
-          style={{
-            fontSize: 16,
-            lineHeight: 1.6,
-            marginBottom: 12,
-            whiteSpace: 'pre-wrap',
-            color: token.colorText,
-          }}
-        >
-          {post.content}
-        </Paragraph>
+        <div style={{ marginBottom: 12 }}>
+          <PostBodyDisplay
+            text={post.content ?? ''}
+            fontSize={16}
+            collapsibleRows={6}
+            preventOuterClick
+          />
+        </div>
 
         {images.length > 0 && (
           <div

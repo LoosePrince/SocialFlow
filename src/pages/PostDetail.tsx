@@ -9,11 +9,12 @@ import { ArrowLeft, Clock, Pencil } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getGithubUrl } from '../github';
 import CommentSection from '../components/CommentSection';
+import PostBodyDisplay from '../components/PostBodyDisplay';
 import dayjs from 'dayjs';
 import { toMillis } from '../lib/time';
 import { motion } from 'framer-motion';
 
-const { Title, Text, Paragraph } = Typography;
+const { Title, Text } = Typography;
 
 const PostDetail: React.FC = () => {
   const { id } = useParams();
@@ -122,9 +123,9 @@ const PostDetail: React.FC = () => {
           </Flex>
         </Flex>
 
-        <Paragraph style={{ fontSize: 18, lineHeight: 1.6, color: token.colorText, marginBottom: 24 }}>
-          {post.content}
-        </Paragraph>
+        <div style={{ marginBottom: 24 }}>
+          <PostBodyDisplay text={post.content ?? ''} fontSize={18} />
+        </div>
         
         {post.images && post.images.length > 0 && (
           <Flex vertical gap={12}>

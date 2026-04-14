@@ -2,7 +2,7 @@ import React from 'react';
 import { Card, Tag, Space, Button, App, Popover, Flex, Typography, theme } from 'antd';
 import { GithubCdnAvatar } from './GithubCdnAvatar';
 import { GithubCdnImg } from './GithubCdnImg';
-import { Rocket, Clock, MessageSquare, MoreHorizontal, ShieldCheck, Pencil } from 'lucide-react';
+import { Rocket, Clock, MessageSquare, MoreHorizontal, ShieldCheck, Pencil, Heart } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { apiJson } from '../lib/api';
@@ -97,8 +97,12 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
           <Text type="secondary" style={{ fontSize: 12 }}>{createdAtMs != null ? dayjs(createdAtMs).fromNow() : '—'}</Text>
         </Flex>,
         <Flex justify="center" align="center" gap={4} onClick={() => navigate(`/project/${project.id}`)} style={{ cursor: 'pointer' }}>
+          <Heart size={14} />
+          <Text type="secondary" style={{ fontSize: 12 }}>{(project.likecount ?? project.likeCount) || 0}</Text>
+        </Flex>,
+        <Flex justify="center" align="center" gap={4} onClick={() => navigate(`/project/${project.id}`)} style={{ cursor: 'pointer' }}>
           <MessageSquare size={14} />
-          <Text type="secondary" style={{ fontSize: 12 }}>{project.commentcount || 0}</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{(project.commentcount ?? project.commentCount) || 0}</Text>
         </Flex>,
         canManage ? (
           <Popover

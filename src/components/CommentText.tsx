@@ -7,6 +7,7 @@ import { parseCommentSegments, type CommentSegment } from '../lib/commentSegment
 
 interface CommentTextProps {
   text: string;
+  singleLine?: boolean;
 }
 
 /** 悬停预览：单边介于 50px～150px，不足则放大、过大则缩小 */
@@ -21,7 +22,7 @@ const OWO_PREVIEW_IMG: React.CSSProperties = {
   objectFit: 'contain',
 };
 
-const CommentText: React.FC<CommentTextProps> = ({ text }) => {
+const CommentText: React.FC<CommentTextProps> = ({ text, singleLine = false }) => {
   const { users } = useUsers();
   const { token: themeToken } = theme.useToken();
   const { getIcon } = useTwikooOwo();
@@ -57,6 +58,27 @@ const CommentText: React.FC<CommentTextProps> = ({ text }) => {
         }
         return <span key={index}>{seg.raw}</span>;
       }
+      case 'link':
+        return (
+          <a
+            key={index}
+            href={seg.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              color: themeToken.colorLink,
+              textDecoration: 'none',
+            }}
+            onMouseEnter={(ev) => {
+              ev.currentTarget.style.textDecoration = 'underline';
+            }}
+            onMouseLeave={(ev) => {
+              ev.currentTarget.style.textDecoration = 'none';
+            }}
+          >
+            {seg.raw}
+          </a>
+        );
       case 'owo': {
         const url = getIcon(seg.id);
         if (url) {
@@ -125,7 +147,13 @@ const CommentText: React.FC<CommentTextProps> = ({ text }) => {
   };
 
   return (
-    <span className="comment-text-content">
+    <span
+      className="comment-text-content"
+      style={{
+        whiteSpace: singleLine ? 'nowrap' : 'pre-wrap',
+        wordBreak: 'break-word',
+      }}
+    >
       {segments.map((seg, index) => renderSegment(seg, index))}
     </span>
   );
