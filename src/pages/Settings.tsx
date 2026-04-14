@@ -2,8 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Typography, Card, Switch, List, Button, Input, Form, Divider, App, Upload, Modal, Select } from 'antd';
 import { QqOutlined } from '@ant-design/icons';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
+import NotificationSettingsModal from '../components/NotificationSettingsModal';
 import QqQrModal from '../components/QqQrModal';
-import { Moon, Save, LogOut, Camera, Info, KeyRound, Languages } from 'lucide-react';
+import { Moon, Save, LogOut, Camera, Info, KeyRound, Languages, Bell } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -24,6 +25,7 @@ const Settings: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [qqModalOpen, setQqModalOpen] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [notifyModalOpen, setNotifyModalOpen] = useState(false);
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [hasPassword, setHasPassword] = useState<boolean>(false);
   const { message } = App.useApp();
@@ -237,6 +239,19 @@ const Settings: React.FC = () => {
           </List.Item>
           <List.Item
             extra={
+              <Button type="link" onClick={() => setNotifyModalOpen(true)}>
+                {t('settings.notifyManage')}
+              </Button>
+            }
+          >
+            <List.Item.Meta
+              avatar={<Bell size={20} />}
+              title={t('notify.settings.title')}
+              description={t('notify.settings.descShort')}
+            />
+          </List.Item>
+          <List.Item
+            extra={
               <Button type="link" onClick={() => navigate('/about')}>
                 {t('settings.go')}
               </Button>
@@ -256,6 +271,8 @@ const Settings: React.FC = () => {
       <Button danger type="dashed" icon={<LogOut size={18} />} block size="large" onClick={logout}>
         {t('settings.logout')}
       </Button>
+
+      <NotificationSettingsModal open={notifyModalOpen} onClose={() => setNotifyModalOpen(false)} />
 
       <Modal
         title={hasPassword ? t('settings.managePassword') : t('settings.setPassword')}

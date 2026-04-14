@@ -53,6 +53,88 @@ function toPublicProfile(row: ProfileRow) {
   };
 }
 
+type NotifyType = 'recommend' | 'like' | 'comment' | 'reply' | 'delete' | 'mention';
+
+type NotificationSettingsRow = {
+  userid: string;
+  receive_recommend: boolean;
+  alert_recommend: boolean;
+  receive_like: boolean;
+  alert_like: boolean;
+  receive_comment: boolean;
+  alert_comment: boolean;
+  receive_reply: boolean;
+  alert_reply: boolean;
+  receive_delete: boolean;
+  alert_delete: boolean;
+  receive_mention: boolean;
+  alert_mention: boolean;
+  updatedat: number;
+};
+
+const notifySettingMap: Record<NotifyType, { receive: keyof NotificationSettingsRow; alert: keyof NotificationSettingsRow }> =
+  {
+    recommend: { receive: 'receive_recommend', alert: 'alert_recommend' },
+    like: { receive: 'receive_like', alert: 'alert_like' },
+    comment: { receive: 'receive_comment', alert: 'alert_comment' },
+    reply: { receive: 'receive_reply', alert: 'alert_reply' },
+    delete: { receive: 'receive_delete', alert: 'alert_delete' },
+    mention: { receive: 'receive_mention', alert: 'alert_mention' },
+  };
+
+async function ensureNotificationSettings(userId: string): Promise<NotificationSettingsRow> {
+  const rows = await sql`
+    INSERT INTO notification_settings (userid)
+    VALUES (${userId})
+    ON CONFLICT (userid) DO NOTHING
+    RETURNING *
+  `;
+  if (rows.length > 0) return rows[0] as NotificationSettingsRow;
+  const existing = await sql`SELECT * FROM notification_settings WHERE userid = ${userId} LIMIT 1`;
+  return existing[0] as NotificationSettingsRow;
+}
+
+async function emitNotification(params: {
+  toUserId: string;
+  fromUserName: string;
+  type: NotifyType;
+  eventKey: string;
+  commentText?: string;
+  contentId?: string | null;
+  contentType?: 'post' | 'project' | null;
+  payload?: Record<string, unknown>;
+}) {
+  const { toUserId, fromUserName, type, eventKey, commentText, contentId, contentType, payload } = params;
+  if (!toUserId || !eventKey) return;
+
+  const settings = await ensureNotificationSettings(toUserId);
+  const keys = notifySettingMap[type];
+  const receive = Boolean(settings[keys.receive]);
+  if (!receive) return;
+  const isAlert = Boolean(settings[keys.alert]);
+
+  await sql`
+    INSERT INTO notifications (id, touserid, fromusername, commenttext, contentid, contenttype, type, isread, createdat, eventkey, isalert, payload)
+    VALUES (
+      ${crypto.randomUUID()},
+      ${toUserId},
+      ${fromUserName},
+      ${commentText ?? ''},
+      ${contentId ?? null},
+      ${contentType ?? null},
+      ${type},
+      ${!isAlert},
+      ${Date.now()},
+      ${eventKey},
+      ${isAlert},
+      ${JSON.stringify(payload ?? {})}::jsonb
+    )
+    ON CONFLICT (touserid, type, eventkey)
+    WHERE eventkey <> ''
+    DO NOTHING
+  `;
+}
+
 app.use(
   '*',
   cors({
@@ -269,6 +351,56 @@ app.post('/api/auth/password-login', async (c) => {
   }
 });
 
+// ---------- notification settings ----------
+app.get('/api/notification-settings', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const row = await ensureNotificationSettings(user.sub);
+  return c.json(row);
+});
+
+app.patch('/api/notification-settings', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json<Partial<Omit<NotificationSettingsRow, 'userid' | 'updatedat'>>>();
+  const current = await ensureNotificationSettings(user.sub);
+
+  const next = {
+    receive_recommend: body.receive_recommend ?? current.receive_recommend,
+    alert_recommend: body.alert_recommend ?? current.alert_recommend,
+    receive_like: body.receive_like ?? current.receive_like,
+    alert_like: body.alert_like ?? current.alert_like,
+    receive_comment: body.receive_comment ?? current.receive_comment,
+    alert_comment: body.alert_comment ?? current.alert_comment,
+    receive_reply: body.receive_reply ?? current.receive_reply,
+    alert_reply: body.alert_reply ?? current.alert_reply,
+    receive_delete: body.receive_delete ?? current.receive_delete,
+    alert_delete: body.alert_delete ?? current.alert_delete,
+    receive_mention: body.receive_mention ?? current.receive_mention,
+    alert_mention: body.alert_mention ?? current.alert_mention,
+    updatedat: Date.now(),
+  };
+
+  const rows = await sql`
+    UPDATE notification_settings
+    SET
+      receive_recommend = ${next.receive_recommend},
+      alert_recommend = ${next.alert_recommend},
+      receive_like = ${next.receive_like},
+      alert_like = ${next.alert_like},
+      receive_comment = ${next.receive_comment},
+      alert_comment = ${next.alert_comment},
+      receive_reply = ${next.receive_reply},
+      alert_reply = ${next.alert_reply},
+      receive_delete = ${next.receive_delete},
+      alert_delete = ${next.alert_delete},
+      receive_mention = ${next.receive_mention},
+      alert_mention = ${next.alert_mention},
+      updatedat = ${next.updatedat}
+    WHERE userid = ${user.sub}
+    RETURNING *
+  `;
+  return c.json(rows[0] as NotificationSettingsRow);
+});
+
 // ---------- feeds ----------
 app.get('/api/feeds', async (c) => {
   const showAll = c.req.query('showAll') === 'true' || c.req.query('showAll') === '1';
@@ -435,12 +567,12 @@ app.patch('/api/posts/:id', authMiddleware, async (c) => {
     isrecommended?: boolean;
   }>();
 
-  const postRows = await sql`SELECT authorid FROM posts WHERE id = ${id} LIMIT 1`;
-  const post = postRows[0] as { authorid: string } | undefined;
+  const postRows = await sql`SELECT authorid, isrecommended FROM posts WHERE id = ${id} LIMIT 1`;
+  const post = postRows[0] as { authorid: string; isrecommended: boolean } | undefined;
   if (!post) return c.json({ error: 'Not found' }, 404);
 
-  const profRows = await sql`SELECT role FROM profiles WHERE id = ${user.sub} LIMIT 1`;
-  const prof = profRows[0] as { role: string } | undefined;
+  const profRows = await sql`SELECT role, displayname FROM profiles WHERE id = ${user.sub} LIMIT 1`;
+  const prof = profRows[0] as { role: string; displayname: string } | undefined;
   const isAdmin = prof?.role === 'admin';
   const isAuthor = post.authorid === user.sub;
   if (!isAdmin && !isAuthor) {
@@ -468,6 +600,17 @@ app.patch('/api/posts/:id', authMiddleware, async (c) => {
   }
   if (hasRec && isAdmin) {
     await sql`UPDATE posts SET isrecommended = ${body.isrecommended ?? false} WHERE id = ${id}`;
+    if (body.isrecommended === true && !post.isrecommended && post.authorid !== user.sub) {
+      await emitNotification({
+        toUserId: post.authorid,
+        fromUserName: prof?.displayname ?? '管理员',
+        type: 'recommend',
+        eventKey: `recommend:post:${id}`,
+        commentText: '你的动态已被推荐到首页',
+        contentId: id,
+        contentType: 'post',
+      });
+    }
   }
 
   const [row] = await sql`
@@ -488,10 +631,21 @@ app.delete('/api/posts/:id', authMiddleware, async (c) => {
   const postRows = await sql`SELECT authorid FROM posts WHERE id = ${id} LIMIT 1`;
   const post = postRows[0] as { authorid: string } | undefined;
   if (!post) return c.json({ error: 'Not found' }, 404);
-  const profRows = await sql`SELECT role FROM profiles WHERE id = ${user.sub} LIMIT 1`;
-  const prof = profRows[0] as { role: string } | undefined;
+  const profRows = await sql`SELECT role, displayname FROM profiles WHERE id = ${user.sub} LIMIT 1`;
+  const prof = profRows[0] as { role: string; displayname: string } | undefined;
   if (post.authorid !== user.sub && prof?.role !== 'admin') {
     return c.json({ error: 'Forbidden' }, 403);
+  }
+  if (prof?.role === 'admin' && post.authorid !== user.sub) {
+    await emitNotification({
+      toUserId: post.authorid,
+      fromUserName: prof.displayname ?? '管理员',
+      type: 'delete',
+      eventKey: `delete:post:${id}`,
+      commentText: '你的动态已被管理员删除',
+      contentId: id,
+      contentType: 'post',
+    });
   }
   await sql`DELETE FROM posts WHERE id = ${id}`;
   return c.json({ ok: true });
@@ -566,12 +720,12 @@ app.patch('/api/projects/:id', authMiddleware, async (c) => {
     isrecommended?: boolean;
   }>();
 
-  const projRows = await sql`SELECT authorid FROM projects WHERE id = ${id} LIMIT 1`;
-  const proj = projRows[0] as { authorid: string } | undefined;
+  const projRows = await sql`SELECT authorid, isrecommended FROM projects WHERE id = ${id} LIMIT 1`;
+  const proj = projRows[0] as { authorid: string; isrecommended: boolean } | undefined;
   if (!proj) return c.json({ error: 'Not found' }, 404);
 
-  const profRows = await sql`SELECT role FROM profiles WHERE id = ${user.sub} LIMIT 1`;
-  const prof = profRows[0] as { role: string } | undefined;
+  const profRows = await sql`SELECT role, displayname FROM profiles WHERE id = ${user.sub} LIMIT 1`;
+  const prof = profRows[0] as { role: string; displayname: string } | undefined;
   const isAdmin = prof?.role === 'admin';
   const isAuthor = proj.authorid === user.sub;
   if (!isAdmin && !isAuthor) {
@@ -614,6 +768,17 @@ app.patch('/api/projects/:id', authMiddleware, async (c) => {
   }
   if (hasRec && isAdmin) {
     await sql`UPDATE projects SET isrecommended = ${body.isrecommended ?? false} WHERE id = ${id}`;
+    if (body.isrecommended === true && !proj.isrecommended && proj.authorid !== user.sub) {
+      await emitNotification({
+        toUserId: proj.authorid,
+        fromUserName: prof?.displayname ?? '管理员',
+        type: 'recommend',
+        eventKey: `recommend:project:${id}`,
+        commentText: '你的项目已被推荐到首页',
+        contentId: id,
+        contentType: 'project',
+      });
+    }
   }
 
   const [row] = await sql`
@@ -634,10 +799,21 @@ app.delete('/api/projects/:id', authMiddleware, async (c) => {
   const projRows = await sql`SELECT authorid FROM projects WHERE id = ${id} LIMIT 1`;
   const proj = projRows[0] as { authorid: string } | undefined;
   if (!proj) return c.json({ error: 'Not found' }, 404);
-  const profRows = await sql`SELECT role FROM profiles WHERE id = ${user.sub} LIMIT 1`;
-  const prof = profRows[0] as { role: string } | undefined;
+  const profRows = await sql`SELECT role, displayname FROM profiles WHERE id = ${user.sub} LIMIT 1`;
+  const prof = profRows[0] as { role: string; displayname: string } | undefined;
   if (proj.authorid !== user.sub && prof?.role !== 'admin') {
     return c.json({ error: 'Forbidden' }, 403);
+  }
+  if (prof?.role === 'admin' && proj.authorid !== user.sub) {
+    await emitNotification({
+      toUserId: proj.authorid,
+      fromUserName: prof.displayname ?? '管理员',
+      type: 'delete',
+      eventKey: `delete:project:${id}`,
+      commentText: '你的项目已被管理员删除',
+      contentId: id,
+      contentType: 'project',
+    });
   }
   await sql`DELETE FROM projects WHERE id = ${id}`;
   return c.json({ ok: true });
@@ -726,6 +902,25 @@ app.post('/api/likes/toggle', authMiddleware, async (c) => {
   } else {
     await sql`UPDATE projects SET likecount = ${next} WHERE id = ${contentId}`;
   }
+
+  const actorRows = await sql`SELECT displayname FROM profiles WHERE id = ${user.sub} LIMIT 1`;
+  const actor = actorRows[0] as { displayname: string } | undefined;
+  const targetRows =
+    table === 'posts'
+      ? await sql`SELECT authorid FROM posts WHERE id = ${contentId} LIMIT 1`
+      : await sql`SELECT authorid FROM projects WHERE id = ${contentId} LIMIT 1`;
+  const target = targetRows[0] as { authorid: string } | undefined;
+  if (target?.authorid && target.authorid !== user.sub) {
+    await emitNotification({
+      toUserId: target.authorid,
+      fromUserName: actor?.displayname ?? '',
+      type: 'like',
+      eventKey: `like:${contentType}:${contentId}:from:${user.sub}`,
+      commentText: contentType === 'post' ? '你的动态收到了一个赞' : '你的项目收到了一个赞',
+      contentId,
+      contentType,
+    });
+  }
   return c.json({ liked: true });
 });
 
@@ -773,6 +968,13 @@ app.post('/api/comments', authMiddleware, async (c) => {
 
   const id = crypto.randomUUID();
   const createdat = Date.now();
+  const mentionIds = Array.from(
+    new Set(
+      (body.mentionids ?? [])
+        .map((x) => String(x).trim())
+        .filter((x) => UUID_RE.test(x))
+    )
+  );
 
   await sql`
     INSERT INTO comments (id, contentid, contenttype, authorid, text, createdat, parentid, replytoname, mentionids)
@@ -785,7 +987,7 @@ app.post('/api/comments', authMiddleware, async (c) => {
       ${createdat},
       ${body.parentid ?? null},
       ${body.replytoname ?? null},
-      ${JSON.stringify(body.mentionids ?? [])}::jsonb
+      ${sql.array(mentionIds)}::uuid[]
     )
   `;
 
@@ -800,6 +1002,56 @@ app.post('/api/comments', authMiddleware, async (c) => {
     await sql`UPDATE posts SET commentcount = ${nextCount} WHERE id = ${body.contentid}`;
   } else {
     await sql`UPDATE projects SET commentcount = ${nextCount} WHERE id = ${body.contentid}`;
+  }
+
+  const actorRows = await sql`SELECT displayname FROM profiles WHERE id = ${user.sub} LIMIT 1`;
+  const actor = actorRows[0] as { displayname: string } | undefined;
+  const actorName = actor?.displayname ?? '';
+
+  const contentRows =
+    tableName === 'posts'
+      ? await sql`SELECT authorid FROM posts WHERE id = ${body.contentid} LIMIT 1`
+      : await sql`SELECT authorid FROM projects WHERE id = ${body.contentid} LIMIT 1`;
+  const content = contentRows[0] as { authorid: string } | undefined;
+
+  if (body.parentid) {
+    const parentRows = await sql`SELECT authorid FROM comments WHERE id = ${body.parentid} LIMIT 1`;
+    const parent = parentRows[0] as { authorid: string } | undefined;
+    if (parent?.authorid && parent.authorid !== user.sub) {
+      await emitNotification({
+        toUserId: parent.authorid,
+        fromUserName: actorName,
+        type: 'reply',
+        eventKey: `reply:${id}:to:${parent.authorid}`,
+        commentText: body.text,
+        contentId: body.contentid,
+        contentType: body.contenttype,
+        payload: { parentId: body.parentid },
+      });
+    }
+  } else if (content?.authorid && content.authorid !== user.sub) {
+    await emitNotification({
+      toUserId: content.authorid,
+      fromUserName: actorName,
+      type: 'comment',
+      eventKey: `comment:${id}:to:${content.authorid}`,
+      commentText: body.text,
+      contentId: body.contentid,
+      contentType: body.contenttype,
+    });
+  }
+
+  for (const mentionedUserId of mentionIds) {
+    if (mentionedUserId === user.sub) continue;
+    await emitNotification({
+      toUserId: mentionedUserId,
+      fromUserName: actorName,
+      type: 'mention',
+      eventKey: `mention:${id}:to:${mentionedUserId}`,
+      commentText: body.text,
+      contentId: body.contentid,
+      contentType: body.contenttype,
+    });
   }
 
   const [row] = await sql`
@@ -880,15 +1132,19 @@ app.delete('/api/comments/:id', authMiddleware, async (c) => {
 // ---------- notifications ----------
 function mapNotificationRow(r: Record<string, unknown>) {
   const isread = r.isread ?? r.isRead;
+  const isalert = r.isalert ?? r.isAlert;
   const created = r.createdat ?? r.createdAt;
   return {
     id: r.id,
     isRead: !!isread,
+    isAlert: !!isalert,
     fromUserName: String(r.fromusername ?? r.fromUserName ?? r.from_user_name ?? ''),
     commentText: String(r.commenttext ?? r.commentText ?? r.text ?? ''),
     contentType: r.contenttype ?? r.contentType,
     contentId: r.contentid ?? r.contentId,
     type: r.type,
+    eventKey: String(r.eventkey ?? r.eventKey ?? ''),
+    payload: (r.payload ?? {}) as Record<string, unknown>,
     createdAt: typeof created === 'number' ? created : Number(created),
     ...r,
   };

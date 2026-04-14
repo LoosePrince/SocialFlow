@@ -23,7 +23,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     try {
       const data = await apiJson<any[]>('/api/notifications');
       setNotifications(data);
-      setUnreadCount(data.filter((n: any) => !n.isRead).length);
+      setUnreadCount(data.filter((n: any) => n.isAlert !== false && !n.isRead).length);
     } finally {
       setLoading(false);
     }
