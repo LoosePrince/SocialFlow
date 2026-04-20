@@ -1,14 +1,14 @@
+import { App, Button, Card, Flex, Input, Modal, Popover, Tag, Typography, theme } from 'antd';
+import dayjs from 'dayjs';
+import { Clock, Heart, MessageSquare, MoreHorizontal, Pencil, Rocket, Share2, ShieldCheck, Trash2 } from 'lucide-react';
 import React, { useState } from 'react';
-import { Card, Tag, Space, Button, App, Popover, Flex, Typography, theme, Modal, Input } from 'antd';
-import { GithubCdnAvatar } from './GithubCdnAvatar';
-import { GithubCdnImg } from './GithubCdnImg';
-import { Rocket, Clock, MessageSquare, MoreHorizontal, ShieldCheck, Pencil, Heart, Share2, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/I18nContext';
 import { apiJson } from '../lib/api';
 import { toMillis } from '../lib/time';
-import dayjs from 'dayjs';
+import { GithubCdnAvatar } from './GithubCdnAvatar';
+import { GithubCdnImg } from './GithubCdnImg';
 
 const { Text } = Typography;
 
@@ -77,6 +77,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
       hoverable
       style={{
         marginBottom: 16,
+        position: 'relative',
         overflow: 'hidden',
         border: `1px solid ${token.colorBorderSecondary}`,
         borderRadius: token.borderRadiusLG
@@ -129,9 +130,12 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
           <Share2 size={14} />
           <Text type="secondary" style={{ fontSize: 12 }}>{t('share.short')}</Text>
         </Flex>,
-        canManage ? (
+      ].filter(Boolean) as any}
+    >
+      {canManage && (
+        <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 2 }}>
           <Popover
-            placement="topRight"
+            placement="bottomRight"
             content={
               <Flex vertical gap={4}>
                 <Button
@@ -168,13 +172,19 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
             }
             trigger="click"
           >
-            <div onClick={e => e.stopPropagation()} style={{ display: 'flex', justifyContent: 'center' }}>
-              <MoreHorizontal size={18} />
-            </div>
+            <Button
+              type="text"
+              icon={<MoreHorizontal size={18} />}
+              style={{
+                color: token.colorTextLightSolid,
+                background: 'rgba(0, 0, 0, 0.35)',
+                borderRadius: token.borderRadiusSM
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
           </Popover>
-        ) : null
-      ].filter(Boolean) as any}
-    >
+        </div>
+      )}
       <Card.Meta
         avatar={
           <GithubCdnAvatar

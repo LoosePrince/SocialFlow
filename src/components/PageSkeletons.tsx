@@ -100,13 +100,14 @@ export function PostCardSkeleton() {
   );
 }
 
-/** 与 ProjectCard（封面 + Meta + actions）一致 */
+/** 与 ProjectCard（封面 + 右上操作 + Meta + actions）一致 */
 export function ProjectCardSkeleton() {
   const { token } = theme.useToken();
   return (
     <Card
       style={{
         marginBottom: 16,
+        position: 'relative',
         overflow: 'hidden',
         border: `1px solid ${token.colorBorderSecondary}`,
         borderRadius: token.borderRadiusLG,
@@ -126,14 +127,20 @@ export function ProjectCardSkeleton() {
         <Flex key="t" justify="center" align="center" style={{ padding: '8px 0' }}>
           <Skeleton.Input active size="small" style={{ width: 88, height: 14 }} />
         </Flex>,
+        <Flex key="l" justify="center" align="center" style={{ padding: '8px 0' }}>
+          <Skeleton.Input active size="small" style={{ width: 48, height: 14 }} />
+        </Flex>,
         <Flex key="c" justify="center" align="center" style={{ padding: '8px 0' }}>
           <Skeleton.Input active size="small" style={{ width: 48, height: 14 }} />
         </Flex>,
-        <Flex key="m" justify="center" align="center" style={{ padding: '8px 0' }}>
-          <Skeleton.Button active size="small" style={{ width: 28, minWidth: 28, height: 28 }} />
+        <Flex key="s" justify="center" align="center" style={{ padding: '8px 0' }}>
+          <Skeleton.Input active size="small" style={{ width: 48, height: 14 }} />
         </Flex>,
       ]}
     >
+      <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 2 }}>
+        <Skeleton.Button active size="small" style={{ width: 32, minWidth: 32, height: 32 }} />
+      </div>
       <Card.Meta
         avatar={<Skeleton.Avatar active />}
         title={<Skeleton.Input active size="small" style={{ width: '70%', maxWidth: 280, height: 20 }} />}
