@@ -36,8 +36,9 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
   const { token } = theme.useToken();
   const screens = useBreakpoint();
   const images = post.images || [];
-  const displayImages = images.slice(0, 9);
-  const remainingCount = images.length - 9;
+  const maxVisibleImages = screens.md ? 9 : 3;
+  const displayImages = images.slice(0, maxVisibleImages);
+  const remainingCount = Math.max(0, images.length - maxVisibleImages);
   const { message, modal } = App.useApp();
   const [shareOpen, setShareOpen] = useState(false);
 
@@ -232,7 +233,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
                     layout="gridCell"
                     preview={{ mask: null }}
                   />
-                  {idx === 8 && remainingCount > 0 && (
+                  {idx === displayImages.length - 1 && remainingCount > 0 && (
                     <div
                       style={{
                         position: 'absolute',

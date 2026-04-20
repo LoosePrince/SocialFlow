@@ -1,8 +1,8 @@
-import React from 'react';
+import { Grid, theme } from 'antd';
 import { TabBar } from 'antd-mobile';
-import { useNavigate, useLocation } from 'react-router-dom';
 import { Home, PlusSquare, User } from 'lucide-react';
-import { theme, Grid } from 'antd';
+import React from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useI18n } from '../context/I18nContext';
 
 const { useBreakpoint } = Grid;
@@ -23,24 +23,24 @@ const MobileTabBar: React.FC = () => {
   if (screens.md) return null;
 
   return (
-    <div style={{ 
+    <div style={{
       position: 'fixed',
-      bottom: 0, left: 0, right: 0,
+      bottom: '-1px', left: 0, right: 0,
       zIndex: 1000,
-      paddingBottom: 'env(safe-area-inset-bottom)',
       background: token.colorBgContainer,
       backdropFilter: 'blur(20px)',
       WebkitBackdropFilter: 'blur(20px)',
       borderTop: `1px solid ${token.colorBorderSecondary}`,
+      overflow: 'hidden',
     }}>
-      <TabBar 
-        activeKey={location.pathname} 
+      <TabBar
+        activeKey={location.pathname}
         onChange={value => navigate(value)}
       >
         {tabs.map(item => (
-          <TabBar.Item 
-            key={item.key} 
-            icon={item.icon} 
+          <TabBar.Item
+            key={item.key}
+            icon={item.icon}
             title={item.title}
           />
         ))}

@@ -1,4 +1,4 @@
-import { Button, Empty, Input, Popover, Spin, Tabs, theme } from 'antd';
+import { Button, Empty, Grid, Input, Modal, Popover, Spin, Tabs, theme } from 'antd';
 import { Smile } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../context/I18nContext';
@@ -19,6 +19,8 @@ function formatPlaceholder(text: string): string {
 const GRID_MAX_H = 280;
 const CELL = 40;
 const GAP = 6;
+const PANEL_MAX_W = 320;
+const { useBreakpoint } = Grid;
 
 const OwoEmojiPicker: React.FC<OwoEmojiPickerProps> = ({
   onInsert,
@@ -26,6 +28,7 @@ const OwoEmojiPicker: React.FC<OwoEmojiPickerProps> = ({
   buttonSize = 'middle',
 }) => {
   const { token } = theme.useToken();
+  const screens = useBreakpoint();
   const { t } = useI18n();
   const { ready, error, items, packs } = useTwikooOwo();
   const [open, setOpen] = useState(false);
@@ -61,10 +64,13 @@ const OwoEmojiPicker: React.FC<OwoEmojiPickerProps> = ({
     [onInsert]
   );
 
+  const panelWidth = `min(${PANEL_MAX_W}px, calc(100vw - 24px))`;
+  const gridMaxHeight = 'min(280px, calc(100vh - 320px))';
+
   const renderEmojiGrid = (list: TwikooOwoItem[]) => (
     <div
       style={{
-        maxHeight: GRID_MAX_H,
+        maxHeight: gridMaxHeight,
         overflowY: 'auto',
         display: 'flex',
         flexWrap: 'wrap',
@@ -130,7 +136,12 @@ const OwoEmojiPicker: React.FC<OwoEmojiPickerProps> = ({
   }));
 
   const body = (
-    <div style={{ width: 320 }}>
+    <div
+      style={{
+        width: screens.md ? panelWidth : '100%',
+        maxWidth: '100%',
+      }}
+    >
       <Input.Search
         allowClear
         placeholder={t('owo.searchPlaceholder')}
@@ -138,50 +149,89 @@ const OwoEmojiPicker: React.FC<OwoEmojiPickerProps> = ({
         onChange={(e) => setQuery(e.target.value)}
         style={{ marginBottom: 8 }}
       />
-      {!ready && !error && (
-        <div style={{ textAlign: 'center', padding: 24 }}>
-          <Spin />
-        </div>
-      )}
-      {error && (
-        <Empty
-          description={t('owo.loadFailed')}
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-        />
-      )}
-      {ready && !error && searchMode && filteredSearch.length === 0 && (
-        <Empty description={t('owo.noMatch')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
-      )}
-      {ready && !error && searchMode && filteredSearch.length > 0 && (
-        <div>
-          <div
-            style={{
-              fontSize: 12,
-              color: token.colorTextSecondary,
-              marginBottom: 8,
-            }}
-          >
-            {t('owo.searchResult', { count: filteredSearch.length })}
+      <div
+        style={{
+          maxHeight: 'min(420px, calc(100vh - 180px))',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+        }}
+      >
+        {!ready && !error && (
+          <div style={{ textAlign: 'center', padding: 24 }}>
+            <Spin />
           </div>
-          {renderEmojiGrid(filteredSearch)}
-        </div>
-      )}
-      {ready && !error && !searchMode && packs.length === 0 && (
-        <Empty description={t('owo.emptyPack')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
-      )}
-      {ready && !error && !searchMode && packs.length > 0 && (
-        <Tabs
-          size="small"
-          activeKey={activePackKey}
-          onChange={setActivePackKey}
-          destroyInactiveTabPane
-          tabBarStyle={{ marginBottom: 8 }}
-          style={{ marginBottom: 0 }}
-          items={packTabItems}
-        />
-      )}
+        )}
+        {error && (
+          <Empty
+            description={t('owo.loadFailed')}
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          />
+        )}
+        {ready && !error && searchMode && filteredSearch.length === 0 && (
+          <Empty description={t('owo.noMatch')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        )}
+        {ready && !error && searchMode && filteredSearch.length > 0 && (
+          <div>
+            <div
+              style={{
+                fontSize: 12,
+                color: token.colorTextSecondary,
+                marginBottom: 8,
+              }}
+            >
+              {t('owo.searchResult', { count: filteredSearch.length })}
+            </div>
+            {renderEmojiGrid(filteredSearch)}
+          </div>
+        )}
+        {ready && !error && !searchMode && packs.length === 0 && (
+          <Empty description={t('owo.emptyPack')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        )}
+        {ready && !error && !searchMode && packs.length > 0 && (
+          <Tabs
+            size="small"
+            activeKey={activePackKey}
+            onChange={setActivePackKey}
+            destroyInactiveTabPane
+            tabBarStyle={{ marginBottom: 8 }}
+            style={{ marginBottom: 0 }}
+            items={packTabItems}
+          />
+        )}
+      </div>
     </div>
   );
+
+  if (!screens.md) {
+    return (
+      <>
+        <Button
+          type="text"
+          size={buttonSize}
+          disabled={disabled}
+          icon={<Smile size={20} />}
+          aria-label={t('owo.insertTitle')}
+          style={{ color: token.colorTextSecondary, flexShrink: 0 }}
+          onClick={() => setOpen(true)}
+        />
+        <Modal
+          title={t('owo.insertTitle')}
+          open={open}
+          onCancel={() => {
+            setOpen(false);
+            setQuery('');
+          }}
+          footer={null}
+          destroyOnHidden
+          centered
+          width="calc(100vw - 16px)"
+          styles={{ body: { padding: 12 } }}
+        >
+          {body}
+        </Modal>
+      </>
+    );
+  }
 
   return (
     <Popover

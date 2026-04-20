@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Button, List, Space, Modal, App, Mentions, Flex, Typography, theme, Avatar, Input, Segmented } from 'antd';
+import { Button, List, Space, Modal, App, Mentions, Flex, Typography, theme, Avatar, Input, Segmented, Grid } from 'antd';
 import { GithubCdnAvatar } from './GithubCdnAvatar';
 import LikeList from './LikeList';
 import { useNavigate } from 'react-router-dom';
@@ -18,6 +18,7 @@ import { useLoginModal } from '../context/LoginModalContext';
 import { useI18n } from '../context/I18nContext';
 
 const { Text } = Typography;
+const { useBreakpoint } = Grid;
 
 function relativeFromNow(v: unknown) {
   const ms = toMillis(v);
@@ -48,6 +49,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
   const { users } = useUsers();
   const { message, modal } = App.useApp();
   const { t } = useI18n();
+  const screens = useBreakpoint();
 
   const navigate = useNavigate();
 
@@ -319,18 +321,20 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
       </Flex>
 
       <Flex gap={12} style={{ marginBottom: 24 }}>
-        {user ? (
-          <GithubCdnAvatar src={profile?.photourl} size={40} style={{ flexShrink: 0 }} />
-        ) : (
-          <Avatar
-            size={40}
-            style={{
-              flexShrink: 0,
-              background: token.colorFillSecondary,
-              color: token.colorTextDescription,
-            }}
-            icon={<User size={20} />}
-          />
+        {screens.md && (
+          user ? (
+            <GithubCdnAvatar src={profile?.photourl} size={40} style={{ flexShrink: 0 }} />
+          ) : (
+            <Avatar
+              size={40}
+              style={{
+                flexShrink: 0,
+                background: token.colorFillSecondary,
+                color: token.colorTextDescription,
+              }}
+              icon={<User size={20} />}
+            />
+          )
         )}
         <Flex vertical style={{ flex: 1 }}>
           {user && replyTo && (

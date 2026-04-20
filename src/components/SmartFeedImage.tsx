@@ -30,45 +30,43 @@ const SmartFeedImage: React.FC<Props> = ({
     onLoad?.(e);
   };
 
-  const imgStyle: React.CSSProperties = tiny
-    ? {
-        width: '100%',
-        height: '100%',
-        objectFit: 'cover',
-      }
-    : {
-        maxWidth: '100%',
-        width: 'auto',
-        height: 'auto',
-        objectFit: 'contain',
-        display: 'block',
-        marginLeft: 'auto',
-        marginRight: 'auto',
-        ...(layout === 'gridCell' ? { maxHeight: 480 } : {}),
-      };
+  const imgStyle: React.CSSProperties =
+    layout === 'gridCell'
+      ? {
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          objectPosition: 'center center',
+          display: 'block',
+        }
+      : tiny
+        ? {
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            objectPosition: 'center center',
+          }
+        : {
+            maxWidth: '100%',
+            width: 'auto',
+            height: 'auto',
+            objectFit: 'contain',
+            display: 'block',
+            marginLeft: 'auto',
+            marginRight: 'auto',
+          };
 
   const shellStyle: React.CSSProperties =
     layout === 'gridCell'
-      ? tiny
-        ? {
-            position: 'relative',
-            width: '100%',
-            aspectRatio: '1',
-            minHeight: 50,
-            borderRadius: token.borderRadius,
-            overflow: 'hidden',
-            background: token.colorBgLayout,
-          }
-        : {
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'flex-start',
-            width: 'fit-content',
-            maxWidth: '100%',
-            borderRadius: token.borderRadius,
-            overflow: 'hidden',
-            background: token.colorBgLayout,
-          }
+      ? {
+          position: 'relative',
+          width: '100%',
+          aspectRatio: '1',
+          minHeight: 50,
+          borderRadius: token.borderRadius,
+          overflow: 'hidden',
+          background: token.colorBgLayout,
+        }
       : tiny
         ? {
             display: 'flex',
@@ -90,11 +88,26 @@ const SmartFeedImage: React.FC<Props> = ({
             width: '100%',
           };
 
+  const imageWrapperStyle: React.CSSProperties | undefined =
+    layout === 'gridCell'
+      ? {
+          width: '100%',
+          height: '100%',
+          display: 'block',
+          overflow: 'hidden',
+        }
+      : undefined;
+
   return (
     <div style={shellStyle}>
       <GithubCdnAntImage
         {...imgRest}
         onLoad={handleLoad}
+        wrapperStyle={
+          imageWrapperStyle
+            ? { ...(imgRest.wrapperStyle as React.CSSProperties | undefined), ...imageWrapperStyle }
+            : imgRest.wrapperStyle
+        }
         style={{ ...imgStyle, ...style }}
       />
     </div>
