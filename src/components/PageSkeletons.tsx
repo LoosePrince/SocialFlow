@@ -28,16 +28,18 @@ function CommentSectionSkeleton() {
 /** 与 PostCard 卡片结构一致 */
 export function PostCardSkeleton() {
   const { token } = theme.useToken();
+  const screens = useBreakpoint();
   return (
     <Card
       style={{
-        marginBottom: 16,
+        marginBottom: screens.md ? 16 : 0,
         background: token.colorBgContainer,
-        boxShadow: token.boxShadow,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        borderRadius: token.borderRadiusLG,
+        boxShadow: screens.md ? token.boxShadow : 'none',
+        border: screens.md ? `1px solid ${token.colorBorderSecondary}` : 'none',
+        borderBottom: screens.md ? undefined : `1px solid ${token.colorBorderSecondary}`,
+        borderRadius: screens.md ? token.borderRadiusLG : 0,
       }}
-      styles={{ body: { padding: 20 } }}
+      styles={{ body: { padding: screens.md ? 20 : 16 } }}
     >
       <Flex justify="space-between" align="start" style={{ marginBottom: 12 }}>
         <Flex align="start" gap={16}>
@@ -86,7 +88,7 @@ export function PostCardSkeleton() {
         </div>
       </div>
 
-      <div style={{ borderTop: `1px solid ${token.colorBorderSecondary}`, paddingTop: 12 }}>
+      <div style={{ borderTop: screens.md ? `1px solid ${token.colorBorderSecondary}` : 'none', paddingTop: screens.md ? 12 : 0 }}>
         <Flex gap={16}>
           <Skeleton.Button active size="small" style={{ width: 52, height: 28 }} />
           <Skeleton.Button active size="small" style={{ width: 52, height: 28 }} />
@@ -103,15 +105,18 @@ export function PostCardSkeleton() {
 /** 与 ProjectCard（封面 + 右上操作 + Meta + actions）一致 */
 export function ProjectCardSkeleton() {
   const { token } = theme.useToken();
+  const screens = useBreakpoint();
   return (
     <Card
       style={{
-        marginBottom: 16,
+        marginBottom: screens.md ? 16 : 0,
         position: 'relative',
         overflow: 'hidden',
-        border: `1px solid ${token.colorBorderSecondary}`,
-        borderRadius: token.borderRadiusLG,
+        border: screens.md ? `1px solid ${token.colorBorderSecondary}` : 'none',
+        borderBottom: screens.md ? undefined : `1px solid ${token.colorBorderSecondary}`,
+        borderRadius: screens.md ? token.borderRadiusLG : 0,
       }}
+      styles={{ body: { padding: screens.md ? undefined : 16 } }}
       cover={
         <div style={{ width: '100%', height: 180, overflow: 'hidden' }}>
           {/* 不用 Skeleton.Image：其在 cover 内无法铺满，易出现窄条 + 图标错位 */}
@@ -167,13 +172,14 @@ export function HomeFeedSkeleton() {
 /** 个人页顶部资料卡 */
 export function ProfileHeaderSkeleton() {
   const { token } = theme.useToken();
+  const screens = useBreakpoint();
   return (
     <Card
       variant="borderless"
       style={{
-        marginBottom: 24,
-        boxShadow: token.boxShadow,
-        borderRadius: token.borderRadiusLG,
+        marginBottom: screens.md ? 24 : 12,
+        boxShadow: screens.md ? token.boxShadow : 'none',
+        borderRadius: screens.md ? token.borderRadiusLG : 0,
         overflow: 'hidden',
       }}
       styles={{ body: { padding: 0 } }}
@@ -193,11 +199,14 @@ export function ProfileHeaderSkeleton() {
 
 /** 个人页：资料卡 + 「发布的内容」+ 两条 Feed（外层 maxWidth 由页面 motion 容器承担） */
 export function ProfilePageSkeleton() {
+  const screens = useBreakpoint();
   return (
     <>
       <ProfileHeaderSkeleton />
-      <div style={{ marginTop: 32 }}>
-        <Skeleton.Input active size="small" style={{ width: 120, height: 22, marginBottom: 20 }} />
+      <div style={{ marginTop: screens.md ? 32 : 20 }}>
+        <div style={{ paddingInline: screens.md ? 0 : 16 }}>
+          <Skeleton.Input active size="small" style={{ width: 120, height: 22, marginBottom: 14 }} />
+        </div>
         <PostCardSkeleton />
         <ProjectCardSkeleton />
       </div>

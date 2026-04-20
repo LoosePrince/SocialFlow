@@ -1,4 +1,4 @@
-import { App, Button, Card, Flex, Input, Modal, Popover, Tag, Typography, theme } from 'antd';
+import { App, Button, Card, Flex, Grid, Input, Modal, Popover, Tag, Typography, theme } from 'antd';
 import dayjs from 'dayjs';
 import { Clock, Heart, MessageSquare, MoreHorizontal, Pencil, Rocket, Share2, ShieldCheck, Trash2 } from 'lucide-react';
 import React, { useState } from 'react';
@@ -11,6 +11,7 @@ import { GithubCdnAvatar } from './GithubCdnAvatar';
 import { GithubCdnImg } from './GithubCdnImg';
 
 const { Text } = Typography;
+const { useBreakpoint } = Grid;
 
 interface ProjectCardProps {
   project: any;
@@ -22,6 +23,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
   const { t } = useI18n();
   const { message, modal } = App.useApp();
   const { token } = theme.useToken();
+  const screens = useBreakpoint();
   const [shareOpen, setShareOpen] = useState(false);
 
   const isOwner = user?.id === project.authorid;
@@ -74,13 +76,19 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
 
   return (
     <Card
-      hoverable
+      hoverable={!!screens.md}
       style={{
-        marginBottom: 16,
+        marginBottom: screens.md ? 16 : 0,
         position: 'relative',
         overflow: 'hidden',
-        border: `1px solid ${token.colorBorderSecondary}`,
-        borderRadius: token.borderRadiusLG
+        boxShadow: screens.md ? undefined : 'none',
+        border: screens.md ? `1px solid ${token.colorBorderSecondary}` : 'none',
+        borderBottom: screens.md ? undefined : `1px solid ${token.colorBorderSecondary}`,
+        borderRadius: screens.md ? token.borderRadiusLG : 0
+      }}
+      styles={{
+        body: { padding: screens.md ? undefined : 16 },
+        cover: { borderRadius: 0 },
       }}
       cover={
         <div
@@ -89,6 +97,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
             position: 'relative',
             height: 180,
             overflow: 'hidden',
+            borderRadius: 0,
             cursor: 'pointer'
           }}
         >
@@ -99,6 +108,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
               width: '100%',
               height: '100%',
               objectFit: 'cover',
+              borderRadius: 0,
               transition: 'transform 0.3s'
             }}
           />
@@ -176,8 +186,8 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
               type="text"
               icon={<MoreHorizontal size={18} />}
               style={{
-                color: token.colorTextLightSolid,
-                background: 'rgba(0, 0, 0, 0.35)',
+                color: screens.md ? token.colorTextLightSolid : token.colorTextDescription,
+                background: screens.md ? 'rgba(0, 0, 0, 0.35)' : 'transparent',
                 borderRadius: token.borderRadiusSM
               }}
               onClick={(e) => e.stopPropagation()}

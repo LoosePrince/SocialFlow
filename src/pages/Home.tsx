@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useFeeds } from '../hooks/useFeeds';
 import PostCard from '../components/PostCard';
 import ProjectCard from '../components/ProjectCard';
-import { Empty, App, Modal } from 'antd';
+import { Empty, App, Grid, Modal } from 'antd';
 import { motion } from 'framer-motion';
 import { HomeFeedSkeleton } from '../components/PageSkeletons';
 import { useAuth } from '../context/AuthContext';
@@ -11,12 +11,15 @@ import { useI18n } from '../context/I18nContext';
 import { toggleLike } from '../utils';
 import CommentSection from '../components/CommentSection';
 
+const { useBreakpoint } = Grid;
+
 const Home: React.FC = () => {
   const { user } = useAuth();
   const { openLoginModal } = useLoginModal();
   const { feeds, loading } = useFeeds();
   const { message } = App.useApp();
   const { t } = useI18n();
+  const screens = useBreakpoint();
   const [quickCommentPostId, setQuickCommentPostId] = useState<string | null>(null);
 
   const handleLike = async (id: string, type: 'post' | 'project') => {
@@ -42,6 +45,7 @@ const Home: React.FC = () => {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
+        style={{ marginInline: screens.md ? 0 : -16 }}
       >
         <HomeFeedSkeleton />
       </motion.div>
@@ -55,6 +59,7 @@ const Home: React.FC = () => {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
+        style={{ marginInline: screens.md ? 0 : -16 }}
       >
         {feeds.length === 0 ? (
           <Empty description={t('home.empty')} style={{ marginTop: 100 }} />

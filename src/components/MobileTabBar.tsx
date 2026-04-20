@@ -1,7 +1,7 @@
 import React from 'react';
 import { TabBar } from 'antd-mobile';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, Search, PlusSquare, MessageCircle, User } from 'lucide-react';
+import { Home, PlusSquare, User } from 'lucide-react';
 import { theme, Grid } from 'antd';
 import { useI18n } from '../context/I18nContext';
 
@@ -16,9 +16,7 @@ const MobileTabBar: React.FC = () => {
 
   const tabs = [
     { key: '/', title: t('tabs.home'), icon: <Home size={22} /> },
-    { key: '/search', title: t('tabs.search'), icon: <Search size={22} /> },
     { key: '/create', title: t('tabs.create'), icon: <PlusSquare size={24} /> },
-    { key: '/messages', title: t('tabs.messages'), icon: <MessageCircle size={22} /> },
     { key: '/profile', title: t('tabs.me'), icon: <User size={22} /> },
   ];
 

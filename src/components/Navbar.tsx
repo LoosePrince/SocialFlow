@@ -105,7 +105,25 @@ const Navbar: React.FC = () => {
           </div>
         )}
 
-        <Flex align="center" gap={16}>
+        <Flex align="center" gap={screens.md ? 16 : 8}>
+          {!screens.md && (
+            <Button
+              type="text"
+              aria-label={t('tabs.search')}
+              icon={<Search size={20} />}
+              onClick={() => navigate('/search')}
+            />
+          )}
+          {!screens.md && user && (
+            <Badge count={unreadCount} size="small" offset={[-2, 4]}>
+              <Button
+                type="text"
+                aria-label={t('tabs.messages')}
+                icon={<Bell size={20} />}
+                onClick={() => navigate('/messages')}
+              />
+            </Badge>
+          )}
           {user && (
             <>
               {screens.md && (
@@ -141,21 +159,7 @@ const Navbar: React.FC = () => {
                   <Text strong style={{ fontSize: 14 }}>{profile?.displayname}</Text>
                 </Flex>
               </Dropdown>
-            ) : (
-              <Link
-                to="/profile"
-                aria-label={t('nav.profile')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '4px 4px 4px 8px',
-                  borderRadius: 20,
-                  color: 'inherit',
-                }}
-              >
-                <GithubCdnAvatar src={profile?.photourl} size="default" />
-              </Link>
-            )
+            ) : null
           ) : (
             <Button
               type="primary"

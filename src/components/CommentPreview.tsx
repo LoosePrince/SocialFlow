@@ -9,9 +9,10 @@ const { Text } = Typography;
 interface CommentPreviewProps {
   contentId: string;
   contentType?: 'post' | 'project';
+  maxItems?: number;
 }
 
-const CommentPreview: React.FC<CommentPreviewProps> = ({ contentId, contentType = 'post' }) => {
+const CommentPreview: React.FC<CommentPreviewProps> = ({ contentId, contentType = 'post', maxItems = 5 }) => {
   const [comments, setComments] = useState<Array<{ profiles?: { displayname?: string }; text?: string }>>([]);
   const [selectedComment, setSelectedComment] = useState<{ profiles?: { displayname?: string }; text?: string } | null>(null);
   const [openFull, setOpenFull] = useState(false);
@@ -24,14 +25,14 @@ const CommentPreview: React.FC<CommentPreviewProps> = ({ contentId, contentType 
         const data = await apiJson<Array<{ profiles?: { displayname?: string }; text?: string }>>(
           `/api/comments?contentId=${encodeURIComponent(contentId)}&contentType=${encodeURIComponent(contentType)}`
         );
-        setComments(Array.isArray(data) ? data.slice(0, 5) : []);
+        setComments(Array.isArray(data) ? data.slice(0, Math.max(0, maxItems)) : []);
       } catch {
         setComments([]);
       }
     };
 
     void fetchComments();
-  }, [contentId, contentType]);
+  }, [contentId, contentType, maxItems]);
 
   if (comments.length === 0) return null;
 

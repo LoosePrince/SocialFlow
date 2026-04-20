@@ -36,7 +36,7 @@ const Profile: React.FC = () => {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        style={{ maxWidth: 680, margin: '0 auto' }}
+        style={{ maxWidth: 680, margin: '0 auto', marginInline: screens.md ? 0 : -16 }}
       >
         <ProfilePageSkeleton />
       </motion.div>
@@ -49,14 +49,14 @@ const Profile: React.FC = () => {
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      style={{ maxWidth: 680, margin: '0 auto' }}
+      style={{ maxWidth: 680, margin: '0 auto', marginInline: screens.md ? 0 : -16 }}
     >
       <Card 
         variant="borderless"
         style={{ 
-          marginBottom: 24, 
-          boxShadow: token.boxShadow,
-          borderRadius: token.borderRadiusLG,
+          marginBottom: screens.md ? 24 : 12,
+          boxShadow: screens.md ? token.boxShadow : 'none',
+          borderRadius: screens.md ? token.borderRadiusLG : 0,
           overflow: 'hidden',
           position: 'relative',
         }}
@@ -92,10 +92,14 @@ const Profile: React.FC = () => {
         </Flex>
       </Card>
 
-      <div style={{ marginTop: 32 }}>
-        <Title level={4} style={{ marginBottom: 20 }}>{t('profile.publishedContent')}</Title>
+      <div style={{ marginTop: screens.md ? 32 : 20 }}>
+        <Title level={4} style={{ marginBottom: 14, paddingInline: screens.md ? 0 : 16 }}>
+          {t('profile.publishedContent')}
+        </Title>
         {userFeeds.length === 0 ? (
-          <Empty description={t('profile.empty')} />
+          <div style={{ paddingInline: screens.md ? 0 : 16 }}>
+            <Empty description={t('profile.empty')} />
+          </div>
         ) : (
           userFeeds.map(item => (
             <div key={item.id}>

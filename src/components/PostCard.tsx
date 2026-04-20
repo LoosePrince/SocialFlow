@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Space, Button, Popover, App, Flex, Typography, theme, Card, Modal, Input } from 'antd';
+import { Space, Button, Popover, App, Flex, Typography, theme, Card, Modal, Input, Grid } from 'antd';
 import { GithubCdnAvatar } from './GithubCdnAvatar';
 import SmartFeedImage from './SmartFeedImage';
 import { Heart, MessageCircle, Share2, MoreHorizontal, ShieldCheck, Trash2, Pencil } from 'lucide-react';
@@ -19,6 +19,7 @@ dayjs.extend(relativeTime);
 dayjs.locale('zh-cn');
 
 const { Text } = Typography;
+const { useBreakpoint } = Grid;
 
 interface PostCardProps {
   post: any;
@@ -33,6 +34,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
   const { user, isAdmin } = useAuth();
   const { t } = useI18n();
   const { token } = theme.useToken();
+  const screens = useBreakpoint();
   const images = post.images || [];
   const displayImages = images.slice(0, 9);
   const remainingCount = images.length - 9;
@@ -107,13 +109,14 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
   return (
     <Card 
       style={{ 
-        marginBottom: 16,
+        marginBottom: screens.md ? 16 : 0,
         background: token.colorBgContainer,
-        boxShadow: token.boxShadow,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        borderRadius: token.borderRadiusLG,
+        boxShadow: screens.md ? token.boxShadow : 'none',
+        border: screens.md ? `1px solid ${token.colorBorderSecondary}` : 'none',
+        borderBottom: screens.md ? undefined : `1px solid ${token.colorBorderSecondary}`,
+        borderRadius: screens.md ? token.borderRadiusLG : 0,
       }}
-      styles={{ body: { padding: 20 } }}
+      styles={{ body: { padding: screens.md ? 20 : 16 } }}
     >
       {/* Header */}
       <Flex justify="space-between" align="start" style={{ marginBottom: 12 }}>
@@ -259,7 +262,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
       </div>
 
       {/* Footer */}
-      <div style={{ borderTop: `1px solid ${token.colorBorderSecondary}`, paddingTop: 12 }}>
+      <div style={{ borderTop: screens.md ? `1px solid ${token.colorBorderSecondary}` : 'none', paddingTop: screens.md ? 12 : 0 }}>
         <Flex gap={16}>
           <Button 
             type="text" 
@@ -308,8 +311,8 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
           />
         </Flex>
         
-        <LikeList contentId={post.id} contentType="post" refreshNonce={likeListNonce} />
-        <CommentPreview contentId={post.id} contentType="post" />
+        {screens.md && <LikeList contentId={post.id} contentType="post" refreshNonce={likeListNonce} />}
+        <CommentPreview contentId={post.id} contentType="post" maxItems={screens.md ? 5 : 2} />
       </div>
 
       <Modal
