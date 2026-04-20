@@ -33,9 +33,12 @@ const AppLayout: React.FC = () => {
   const screens = useBreakpoint();
   const location = useLocation();
   const isCompactMobileRoute = location.pathname === '/' || location.pathname.startsWith('/profile');
+  const isProjectDetailRoute = location.pathname.startsWith('/project/');
   const mobilePadding = isCompactMobileRoute
     ? '64px 16px calc(50px + env(safe-area-inset-bottom))'
-    : '80px 16px 80px';
+    : isProjectDetailRoute
+      ? '64px 0 calc(50px + env(safe-area-inset-bottom))'
+      : '80px 16px 80px';
 
   return (
     <div

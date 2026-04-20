@@ -90,10 +90,10 @@ const ProjectDetail: React.FC = () => {
         </Button>
         {canEditProject && (
           <Button
-            color="primary"
-            variant="outlined"
+            type="text"
             icon={<Pencil size={16} strokeWidth={2} />}
             onClick={() => navigate(`/create?edit=${encodeURIComponent(project.id)}&type=project`)}
+            style={{ color: token.colorTextSecondary }}
           >
             {t('detail.edit')}
           </Button>
