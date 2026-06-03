@@ -10,8 +10,8 @@ import { I18nProvider } from './context/I18nContext'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ThemeProvider>
-      <I18nProvider>
+    <I18nProvider>
+      <ThemeProvider>
         <AuthProvider>
           <NotificationProvider>
             <App>
@@ -19,7 +19,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             </App>
           </NotificationProvider>
         </AuthProvider>
-      </I18nProvider>
-    </ThemeProvider>
+      </ThemeProvider>
+    </I18nProvider>
   </React.StrictMode>,
 )

@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { ConfigProvider, theme } from 'antd';
+import enUS from 'antd/locale/en_US';
 import zhCN from 'antd/locale/zh_CN';
+import { useI18n, type LocaleCode } from './I18nContext';
 
 type ThemeMode = 'light' | 'dark';
 
@@ -10,8 +12,13 @@ interface ThemeContextType {
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+const antdLocales: Record<LocaleCode, typeof zhCN> = {
+  'zh-CN': zhCN,
+  'en-US': enUS,
+};
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { locale } = useI18n();
   const [mode, setMode] = useState<ThemeMode>(() => {
     const saved = localStorage.getItem('theme') as ThemeMode;
     return saved || 'light';
@@ -29,7 +36,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <ThemeContext.Provider value={{ mode, toggleTheme }}>
       <ConfigProvider
-        locale={zhCN}
+        locale={antdLocales[locale]}
         theme={{
           algorithm: mode === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
           token: {

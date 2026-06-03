@@ -1,6 +1,6 @@
 {
   "settings.language.title": "语言",
-  "settings.language.description": "当前仅提供简体中文",
+  "settings.language.description": "支持简体中文和英语，可随时切换界面语言",
   "settings.language.label": "界面语言",
   "settings.language.updated": "语言设置已保存",
   "nav.profile": "个人主页",
@@ -284,5 +284,10 @@
   "owo.insertTitle": "插入表情",
   "common.expand": "展开",
   "common.collapse": "收起",
-  "locale.zhCN": "简体中文"
+  "site.copyright": "SocialFlow - 树梢的小窝 © 所有",
+  "site.link.homepage": "树梢的个人主页",
+  "site.link.files": "文件仓库",
+  "site.link.freeAi": "免费AI",
+  "locale.zhCN": "简体中文",
+  "locale.enUS": "English"
 }

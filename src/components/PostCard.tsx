@@ -5,8 +5,6 @@ import SmartFeedImage from './SmartFeedImage';
 import { Heart, MessageCircle, Share2, MoreHorizontal, ShieldCheck, Trash2, Pencil } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin/relativeTime';
-import 'dayjs/locale/zh-cn';
 import LikeList from './LikeList';
 import CommentPreview from './CommentPreview';
 import PostBodyDisplay from './PostBodyDisplay';
@@ -14,9 +12,6 @@ import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/I18nContext';
 import { apiJson } from '../lib/api';
 import { toMillis } from '../lib/time';
-
-dayjs.extend(relativeTime);
-dayjs.locale('zh-cn');
 
 const { Text } = Typography;
 const { useBreakpoint } = Grid;

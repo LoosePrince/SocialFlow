@@ -7,15 +7,10 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/I18nContext';
 import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin/relativeTime';
-import 'dayjs/locale/zh-cn';
 import { motion } from 'framer-motion';
 import { apiJson } from '../lib/api';
 import { toMillis } from '../lib/time';
 import NotificationSettingsModal from '../components/NotificationSettingsModal';
-
-dayjs.extend(relativeTime);
-dayjs.locale('zh-cn');
 
 const { Title, Text } = Typography;
 

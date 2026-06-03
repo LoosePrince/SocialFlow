@@ -2,7 +2,7 @@ import React from 'react';
 import { Typography, theme, Divider, Flex } from 'antd';
 import { motion } from 'framer-motion';
 import { ExternalLink } from 'lucide-react';
-import { REPO_URL, SITE_COPYRIGHT, THIRD_PARTY_LINKS } from '../siteMeta';
+import { REPO_URL, SITE_COPYRIGHT_KEY, THIRD_PARTY_LINKS } from '../siteMeta';
 import { useI18n } from '../context/I18nContext';
 
 const { Title, Paragraph, Text, Link } = Typography;
@@ -48,7 +48,7 @@ const About: React.FC = () => {
         {t('about.copyright')}
       </Title>
       <Text type="secondary" style={{ fontSize: 14 }}>
-        {SITE_COPYRIGHT}
+        {t(SITE_COPYRIGHT_KEY)}
       </Text>
 
       <Title level={5} style={{ marginTop: 24, marginBottom: 12 }}>
@@ -57,7 +57,7 @@ const About: React.FC = () => {
       <Flex vertical gap={8}>
         {THIRD_PARTY_LINKS.map((item) => (
           <Link key={item.href} href={item.href} target="_blank" rel="noopener noreferrer">
-            {item.label}
+            {t(item.labelKey)}
             <ExternalLink size={14} style={{ marginLeft: 6, verticalAlign: 'middle' }} aria-hidden />
           </Link>
         ))}

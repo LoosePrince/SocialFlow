@@ -2,7 +2,7 @@ import React from 'react';
 import { Grid, Typography, theme, Flex } from 'antd';
 import { Link } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
-import { SITE_COPYRIGHT, THIRD_PARTY_LINKS } from '../siteMeta';
+import { SITE_COPYRIGHT_KEY, THIRD_PARTY_LINKS } from '../siteMeta';
 import { useI18n } from '../context/I18nContext';
 
 const { Text, Link: TypographyLink } = Typography;
@@ -29,7 +29,7 @@ const SiteFooter: React.FC = () => {
     >
       <Flex vertical gap={12} align="center" style={{ textAlign: 'center' }}>
         <Text type="secondary" style={{ fontSize: 13, lineHeight: 1.6 }}>
-          {SITE_COPYRIGHT}
+          {t(SITE_COPYRIGHT_KEY)}
         </Text>
         <Flex wrap="wrap" justify="center" gap="8px 16px" align="center">
           {THIRD_PARTY_LINKS.map((item) => (
@@ -40,7 +40,7 @@ const SiteFooter: React.FC = () => {
               rel="noopener noreferrer"
               style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 4 }}
             >
-              {item.label}
+              {t(item.labelKey)}
               <ExternalLink size={12} aria-hidden />
             </TypographyLink>
           ))}
