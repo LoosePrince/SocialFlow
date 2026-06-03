@@ -601,16 +601,18 @@ app.get('/api/projects/:id', async (c) => {
 
 // ---------- users ----------
 app.get('/api/users', async (c) => {
-  const rows = (await sql`SELECT id, displayname, photourl FROM profiles`) as unknown as {
+  const rows = (await sql`SELECT id, displayname, photourl, role FROM profiles`) as unknown as {
     id: string;
     displayname: string;
     photourl: string;
+    role: string;
   }[];
   return c.json(
     rows.map((u) => ({
       uid: u.id,
       displayname: u.displayname,
       photourl: u.photourl,
+      role: u.role,
     }))
   );
 });
