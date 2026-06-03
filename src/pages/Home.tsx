@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useFeeds } from '../hooks/useFeeds';
 import PostCard from '../components/PostCard';
 import ProjectCard from '../components/ProjectCard';
@@ -10,6 +10,7 @@ import { useLoginModal } from '../context/LoginModalContext';
 import { useI18n } from '../context/I18nContext';
 import { toggleLike } from '../utils';
 import CommentSection from '../components/CommentSection';
+import FeedFilter, { FeedFilterValue } from '../components/FeedFilter';
 
 const { useBreakpoint } = Grid;
 
@@ -21,6 +22,19 @@ const Home: React.FC = () => {
   const { t } = useI18n();
   const screens = useBreakpoint();
   const [quickCommentPostId, setQuickCommentPostId] = useState<string | null>(null);
+  const [feedFilter, setFeedFilter] = useState<FeedFilterValue>('all');
+
+  const visibleFeeds = useMemo(() => {
+    if (feedFilter === 'all') return feeds;
+    return feeds.filter((item) => item.type === feedFilter);
+  }, [feedFilter, feeds]);
+
+  const emptyDescription =
+    feedFilter === 'post'
+      ? t('feed.emptyPosts')
+      : feedFilter === 'project'
+        ? t('feed.emptyProjects')
+        : t('home.emptyAll');
 
   const handleLike = async (id: string, type: 'post' | 'project') => {
     if (!user) {
@@ -61,10 +75,11 @@ const Home: React.FC = () => {
         exit={{ opacity: 0 }}
         style={{ marginInline: screens.md ? 0 : -16 }}
       >
-        {feeds.length === 0 ? (
-          <Empty description={t('home.empty')} style={{ marginTop: 100 }} />
+        <FeedFilter value={feedFilter} onChange={setFeedFilter} />
+        {visibleFeeds.length === 0 ? (
+          <Empty description={emptyDescription} style={{ marginTop: 100 }} />
         ) : (
-          feeds.map((item) => (
+          visibleFeeds.map((item) => (
             <div key={item.id}>
               {item.type === 'post' ? (
                 <PostCard post={item} onLike={(id) => handleLike(id, 'post')} onComment={handleComment} />

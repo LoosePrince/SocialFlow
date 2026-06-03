@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useFeeds } from '../hooks/useFeeds';
 import PostCard from '../components/PostCard';
@@ -11,6 +11,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useUsers } from '../hooks/useUsers';
 import { Settings } from 'lucide-react';
 import { useI18n } from '../context/I18nContext';
+import FeedFilter, { FeedFilterValue } from '../components/FeedFilter';
 
 const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -24,12 +25,29 @@ const Profile: React.FC = () => {
   const { token } = theme.useToken();
   const screens = useBreakpoint();
   const { t } = useI18n();
+  const [feedFilter, setFeedFilter] = useState<FeedFilterValue>('all');
 
   const targetUid = uid || currentUser?.id;
   const isOwnProfile = targetUid === currentUser?.id;
   
   const displayProfile = isOwnProfile ? currentProfile : users.find(u => u.uid === targetUid);
-  const userFeeds = feeds.filter(f => f.authorid === targetUid);
+  const userFeeds = useMemo(
+    () => feeds.filter((item) => item.authorid === targetUid),
+    [feeds, targetUid]
+  );
+  const visibleFeeds = useMemo(() => {
+    if (feedFilter === 'all') return userFeeds;
+    return userFeeds.filter((item) => item.type === feedFilter);
+  }, [feedFilter, userFeeds]);
+
+  const emptyDescription =
+    userFeeds.length === 0
+      ? t('profile.empty')
+      : feedFilter === 'post'
+        ? t('profile.emptyPosts')
+        : feedFilter === 'project'
+          ? t('profile.emptyProjects')
+          : t('profile.empty');
 
   if (authLoading || feedsLoading) {
     return (
@@ -96,12 +114,13 @@ const Profile: React.FC = () => {
         <Title level={4} style={{ marginBottom: 14, paddingInline: screens.md ? 0 : 16 }}>
           {t('profile.publishedContent')}
         </Title>
-        {userFeeds.length === 0 ? (
+        <FeedFilter value={feedFilter} onChange={setFeedFilter} />
+        {visibleFeeds.length === 0 ? (
           <div style={{ paddingInline: screens.md ? 0 : 16 }}>
-            <Empty description={t('profile.empty')} />
+            <Empty description={emptyDescription} />
           </div>
         ) : (
-          userFeeds.map(item => (
+          visibleFeeds.map(item => (
             <div key={item.id}>
                {item.type === 'post' ? (
                  <PostCard post={item} onLike={() => {}} onComment={() => {}} />
