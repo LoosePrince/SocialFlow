@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { App, Tabs, Form, Input, Upload, Button, Space, Typography, theme, Grid, Switch, Spin, Segmented, Flex, Divider } from 'antd';
+import React, { useState, useEffect, useRef } from 'react';
+import { App, Tabs, Form, Input, Upload, Button, Space, Typography, theme, Grid, Switch, Spin, Segmented, Flex, Divider, Modal } from 'antd';
 import type { UploadFile } from 'antd';
 import { ImagePlus, Type, FileText, Send, Projector, Eye } from 'lucide-react';
 import { uploadToGithub, getGithubUrl } from '../github';
@@ -13,7 +13,7 @@ import SmartFeedImage from './SmartFeedImage';
 const { Title, Paragraph, Text } = Typography;
 const { useBreakpoint } = Grid;
 
-type PathFile = UploadFile & { path?: string };
+type PathFile = UploadFile & { path?: string; localPreview?: string };
 
 export type CreatePanelVariant = 'modal' | 'page';
 
@@ -45,6 +45,11 @@ async function pathsFromUploadList(
   return paths;
 }
 
+function previewSrcFromUploadFile(file: UploadFile): string | undefined {
+  const pf = file as PathFile;
+  return file.url || file.thumbUrl || pf.localPreview || (pf.path ? getGithubUrl(pf.path) : undefined);
+}
+
 const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess, editTarget }) => {
   const { user, isAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -56,6 +61,9 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
   const [projectForm] = Form.useForm();
   const [postFileList, setPostFileList] = useState<UploadFile[]>([]);
   const [projectFileList, setProjectFileList] = useState<UploadFile[]>([]);
+  const [previewImage, setPreviewImage] = useState('');
+  const [previewTitle, setPreviewTitle] = useState('');
+  const localPreviewUrls = useRef(new Set<string>());
   const [activeTab, setActiveTab] = useState<'post' | 'project'>(
     editTarget?.kind ?? 'post'
   );
@@ -87,6 +95,53 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
     editTarget?.kind === 'post' ? editTarget.id : postDraftId;
   const projectUploadContentId =
     editTarget?.kind === 'project' ? editTarget.id : projectDraftId;
+
+  useEffect(() => {
+    return () => {
+      localPreviewUrls.current.forEach((url) => URL.revokeObjectURL(url));
+      localPreviewUrls.current.clear();
+    };
+  }, []);
+
+  const withLocalPreviews = (files: UploadFile[]) =>
+    files.map((file) => {
+      const pf = file as PathFile;
+      if (!pf.localPreview && file.originFileObj instanceof File) {
+        const localPreview = URL.createObjectURL(file.originFileObj);
+        localPreviewUrls.current.add(localPreview);
+        return { ...file, localPreview, thumbUrl: file.thumbUrl || localPreview } as PathFile;
+      }
+      return file;
+    });
+
+  const revokeLocalPreviews = (files: UploadFile[]) => {
+    files.forEach((file) => {
+      const url = (file as PathFile).localPreview;
+      if (url && localPreviewUrls.current.has(url)) {
+        URL.revokeObjectURL(url);
+        localPreviewUrls.current.delete(url);
+      }
+    });
+  };
+
+  const updatePostFileList = (files: UploadFile[]) => {
+    const nextUids = new Set(files.map((file) => file.uid));
+    revokeLocalPreviews(postFileList.filter((file) => !nextUids.has(file.uid)));
+    setPostFileList(withLocalPreviews(files));
+  };
+
+  const updateProjectFileList = (files: UploadFile[]) => {
+    const nextUids = new Set(files.map((file) => file.uid));
+    revokeLocalPreviews(projectFileList.filter((file) => !nextUids.has(file.uid)));
+    setProjectFileList(withLocalPreviews(files));
+  };
+
+  const handleUploadPreview = async (file: UploadFile) => {
+    const src = previewSrcFromUploadFile(file);
+    if (!src) return;
+    setPreviewImage(src);
+    setPreviewTitle(file.name || src.split('/').pop() || '');
+  };
 
   useEffect(() => {
     if (!editTarget || !user) {
@@ -203,7 +258,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
       }
 
       postForm.resetFields();
-      setPostFileList([]);
+      updatePostFileList([]);
       onSuccess();
     } catch (error: unknown) {
       message.error(`${t('common.actionFailed')}: ${error instanceof Error ? error.message : String(error)}`);
@@ -258,7 +313,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
       }
 
       projectForm.resetFields();
-      setProjectFileList([]);
+      updateProjectFileList([]);
       onSuccess();
     } catch (error: unknown) {
       message.error(`${t('common.actionFailed')}: ${error instanceof Error ? error.message : String(error)}`);
@@ -283,8 +338,8 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
         if (tabLocked) return;
         const k = key as 'post' | 'project';
         setActiveTab(k);
-        if (k === 'post') setProjectFileList([]);
-        else setPostFileList([]);
+        if (k === 'post') updateProjectFileList([]);
+        else updatePostFileList([]);
       }}
       destroyOnHidden={false}
       className={isPageMobile ? 'create-page-tabs' : undefined}
@@ -379,11 +434,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                       }}
                     >
                       {postFileList.map((f) => {
-                        const pf = f as PathFile;
-                        const src =
-                          f.thumbUrl ||
-                          f.url ||
-                          (pf.path ? getGithubUrl(pf.path) : undefined);
+                        const src = previewSrcFromUploadFile(f);
                         if (!src) return null;
                         return (
                           <div
@@ -412,7 +463,8 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                   <Upload
                     listType="picture-card"
                     fileList={postFileList}
-                    onChange={({ fileList: fl }) => setPostFileList(fl)}
+                    onChange={({ fileList: fl }) => updatePostFileList(fl)}
+                    onPreview={handleUploadPreview}
                     beforeUpload={() => false}
                     multiple
                     maxCount={9}
@@ -546,7 +598,8 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                 <Upload
                   listType="picture"
                   fileList={projectFileList}
-                  onChange={({ fileList: fl }) => setProjectFileList(fl)}
+                  onChange={({ fileList: fl }) => updateProjectFileList(fl)}
+                  onPreview={handleUploadPreview}
                   beforeUpload={() => false}
                   multiple
                   className={isPageMobile ? 'create-page-project-upload' : undefined}
@@ -610,13 +663,34 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
       )}
     </div>
   );
+  const uploadPreviewModal = (
+    <Modal
+      open={!!previewImage}
+      title={previewTitle}
+      footer={null}
+      onCancel={() => setPreviewImage('')}
+      destroyOnHidden
+    >
+      <img alt={previewTitle} style={{ width: '100%' }} src={previewImage} />
+    </Modal>
+  );
 
   if (variant === 'modal') {
-    return tabsWithLoadingOverlay;
+    return (
+      <>
+        {tabsWithLoadingOverlay}
+        {uploadPreviewModal}
+      </>
+    );
   }
 
   if (isPageMobile) {
-    return <div style={{ paddingTop: 0 }}>{tabsWithLoadingOverlay}</div>;
+    return (
+      <>
+        <div style={{ paddingTop: 0 }}>{tabsWithLoadingOverlay}</div>
+        {uploadPreviewModal}
+      </>
+    );
   }
 
   const pageTitle = editTarget
@@ -649,6 +723,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
       >
         {tabsWithLoadingOverlay}
       </div>
+      {uploadPreviewModal}
     </>
   );
 };
