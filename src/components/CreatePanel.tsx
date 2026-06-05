@@ -29,14 +29,20 @@ async function pathsFromUploadList(
   files: UploadFile[],
   upload: (f: File) => Promise<string>
 ): Promise<string[]> {
-  return Promise.all(
-    files.map(async (f) => {
-      const pf = f as PathFile;
-      if (f.originFileObj) return upload(f.originFileObj as File);
-      if (pf.path) return pf.path;
-      throw new Error('missing path');
-    })
-  );
+  const paths: string[] = [];
+  for (const f of files) {
+    const pf = f as PathFile;
+    if (f.originFileObj) {
+      paths.push(await upload(f.originFileObj as File));
+      continue;
+    }
+    if (pf.path) {
+      paths.push(pf.path);
+      continue;
+    }
+    throw new Error(`missing path: ${f.name || f.uid}`);
+  }
+  return paths;
 }
 
 const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess, editTarget }) => {

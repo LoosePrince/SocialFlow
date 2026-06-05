@@ -80,6 +80,10 @@ async function getGithubBlobSha(
   return data.sha ?? null;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export type UploadLayout = 'post' | 'project' | 'profile';
 
 /**
@@ -106,8 +110,6 @@ export async function uploadBufferToGithub(
   const filePath = fullRepoPath(relative);
   const base64 = buf.toString('base64');
 
-  const sha = await getGithubBlobSha(user, repo, token, filePath);
-
   const encoded = filePath
     .split('/')
     .filter(Boolean)
@@ -115,33 +117,43 @@ export async function uploadBufferToGithub(
     .join('/');
   const url = `https://api.github.com/repos/${user}/${repo}/contents/${encoded}`;
 
-  const body: Record<string, unknown> = {
-    message: `upload ${layout}: ${relative}`,
-    content: base64,
-    branch: 'main',
-    committer: {
-      name: user,
-      email: GITHUB_EMAIL() || 'noreply@github.com',
-    },
-  };
-  if (sha) {
-    body.sha = sha;
-  }
+  let lastError = 'GitHub upload failed';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const sha = await getGithubBlobSha(user, repo, token, filePath);
+    const body: Record<string, unknown> = {
+      message: `upload ${layout}: ${relative}`,
+      content: base64,
+      branch: 'main',
+      committer: {
+        name: user,
+        email: GITHUB_EMAIL() || 'noreply@github.com',
+      },
+    };
+    if (sha) {
+      body.sha = sha;
+    }
 
-  const response = await fetch(url, {
-    method: 'PUT',
-    headers: {
-      Authorization: `token ${token}`,
-      Accept: 'application/vnd.github+json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        Authorization: `token ${token}`,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
 
-  if (!response.ok) {
+    if (response.ok) {
+      return relative;
+    }
+
     const err = (await response.json().catch(() => ({}))) as { message?: string };
-    throw new Error(err.message || 'GitHub upload failed');
+    lastError = err.message || `GitHub upload failed: ${response.status}`;
+    if (response.status !== 409 && response.status < 500) {
+      throw new Error(lastError);
+    }
+    await sleep(250 * (attempt + 1));
   }
 
-  return relative;
+  throw new Error(lastError);
 }
