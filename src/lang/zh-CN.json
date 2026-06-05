@@ -289,5 +289,7 @@
   "site.link.files": "文件仓库",
   "site.link.freeAi": "免费AI",
   "locale.zhCN": "简体中文",
-  "locale.enUS": "English"
+  "locale.enUS": "English",
+  "delete.withFiles": "同时删除 GitHub 中的文件",
+  "delete.withFilesHint": "勾选后会删除该内容引用的图片和资源文件，此操作不可恢复。"
 }

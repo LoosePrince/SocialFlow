@@ -289,5 +289,7 @@
   "site.link.files": "File repository",
   "site.link.freeAi": "Free AI",
   "locale.zhCN": "Simplified Chinese",
-  "locale.enUS": "English"
+  "locale.enUS": "English",
+  "delete.withFiles": "Also delete files from GitHub",
+  "delete.withFilesHint": "When checked, images and resource files referenced by this content will be deleted permanently."
 }

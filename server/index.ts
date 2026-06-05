@@ -14,7 +14,7 @@ import {
   type AuthUser,
 } from './auth.js';
 import { broadcastSse, registerSseClient } from './sse.js';
-import { uploadBufferToGithub } from './githubUpload.js';
+import { deleteFilesFromGithub, uploadBufferToGithub } from './githubUpload.js';
 import { queryQqScanStatus, requestQqLoginCode } from './qqDevToolAuth.js';
 import { issueSupabaseSessionForEmail } from './supabaseIssueSession.js';
 import { hashPassword, validatePasswordStrength, verifyPassword } from './passwordAuth.js';
@@ -757,13 +757,22 @@ app.delete('/api/posts/:id', authMiddleware, async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
   if (!id) return c.json({ error: 'Bad request' }, 400);
-  const postRows = await sql`SELECT authorid FROM posts WHERE id = ${id} LIMIT 1`;
-  const post = postRows[0] as { authorid: string } | undefined;
+  const body: { deleteFiles?: boolean } = await c.req.json<{ deleteFiles?: boolean }>().catch(() => ({}));
+  const postRows = await sql`SELECT authorid, images FROM posts WHERE id = ${id} LIMIT 1`;
+  const post = postRows[0] as { authorid: string; images?: string[] | null } | undefined;
   if (!post) return c.json({ error: 'Not found' }, 404);
   const profRows = await sql`SELECT role, displayname FROM profiles WHERE id = ${user.sub} LIMIT 1`;
   const prof = profRows[0] as { role: string; displayname: string } | undefined;
   if (post.authorid !== user.sub && prof?.role !== 'admin') {
     return c.json({ error: 'Forbidden' }, 403);
+  }
+  if (body.deleteFiles) {
+    try {
+      await deleteFilesFromGithub(Array.isArray(post.images) ? post.images : []);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Delete files failed';
+      return c.json({ error: msg }, 500);
+    }
   }
   if (prof?.role === 'admin' && post.authorid !== user.sub) {
     await emitNotification({
@@ -927,13 +936,31 @@ app.delete('/api/projects/:id', authMiddleware, async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
   if (!id) return c.json({ error: 'Bad request' }, 400);
-  const projRows = await sql`SELECT authorid FROM projects WHERE id = ${id} LIMIT 1`;
-  const proj = projRows[0] as { authorid: string } | undefined;
+  const body: { deleteFiles?: boolean } = await c.req.json<{ deleteFiles?: boolean }>().catch(() => ({}));
+  const projRows = await sql`
+    SELECT authorid, coverurl, attachments FROM projects WHERE id = ${id} LIMIT 1
+  `;
+  const proj = projRows[0] as {
+    authorid: string;
+    coverurl?: string | null;
+    attachments?: string[] | null;
+  } | undefined;
   if (!proj) return c.json({ error: 'Not found' }, 404);
   const profRows = await sql`SELECT role, displayname FROM profiles WHERE id = ${user.sub} LIMIT 1`;
   const prof = profRows[0] as { role: string; displayname: string } | undefined;
   if (proj.authorid !== user.sub && prof?.role !== 'admin') {
     return c.json({ error: 'Forbidden' }, 403);
+  }
+  if (body.deleteFiles) {
+    try {
+      await deleteFilesFromGithub([
+        proj.coverurl ?? '',
+        ...(Array.isArray(proj.attachments) ? proj.attachments : []),
+      ]);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Delete files failed';
+      return c.json({ error: msg }, 500);
+    }
   }
   if (prof?.role === 'admin' && proj.authorid !== user.sub) {
     await emitNotification({

@@ -1,4 +1,4 @@
-import { App, Button, Card, Flex, Grid, Input, Modal, Popover, Tag, Typography, theme } from 'antd';
+import { App, Button, Card, Checkbox, Flex, Grid, Input, Modal, Popover, Tag, Typography, theme } from 'antd';
 import dayjs from 'dayjs';
 import { Clock, Heart, MessageSquare, MoreHorizontal, Pencil, Rocket, Share2, ShieldCheck, Trash2 } from 'lucide-react';
 import React, { useState } from 'react';
@@ -45,15 +45,29 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
+    let deleteFiles = false;
     modal.confirm({
       title: t('project.deleteConfirmTitle'),
-      content: t('project.deleteConfirmContent'),
+      content: (
+        <Flex vertical gap={12}>
+          <Text>{t('project.deleteConfirmContent')}</Text>
+          <Checkbox onChange={(event) => { deleteFiles = event.target.checked; }}>
+            {t('delete.withFiles')}
+          </Checkbox>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {t('delete.withFilesHint')}
+          </Text>
+        </Flex>
+      ),
       okText: t('project.delete'),
       okType: 'danger',
       cancelText: t('common.cancel'),
       onOk: async () => {
         try {
-          await apiJson(`/api/projects/${project.id}`, { method: 'DELETE' });
+          await apiJson(`/api/projects/${project.id}`, {
+            method: 'DELETE',
+            body: JSON.stringify({ deleteFiles }),
+          });
           message.success(t('project.deleted'));
         } catch {
           message.error(t('project.deleteFailed'));

@@ -35,6 +35,43 @@ function fullRepoPath(relativeUnderRoot: string): string {
   return root ? `${root}/${rel}` : rel;
 }
 
+function relativeUnderUploadRoot(input: string): string | null {
+  const raw = input.trim();
+  if (!raw) return null;
+
+  const user = GITHUB_USER();
+  const repo = GITHUB_REPO();
+  const root = uploadRootDir();
+  let pathInRepo = raw.replace(/^\/+/, '');
+
+  if (/^https?:\/\//i.test(raw)) {
+    const pathOnly = raw.split(/[?#]/)[0];
+    const patterns = [
+      /^https?:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/i,
+      /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/i,
+      /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/raw\/([^/]+)\/(.+)$/i,
+      /^https?:\/\/cdn\.jsdelivr\.net\/gh\/([^/]+)\/([^@]+)@([^/]+)\/(.+)$/i,
+      /^https?:\/\/cdn\.jsdmirror\.com\/gh\/([^/]+)\/([^@]+)@([^/]+)\/(.+)$/i,
+    ];
+    const match = patterns.map((pattern) => pathOnly.match(pattern)).find(Boolean);
+    if (!match) return null;
+    const [, owner, repoName, , pathEncoded] = match;
+    if (
+      user &&
+      repo &&
+      (owner.toLowerCase() !== user.toLowerCase() || repoName.toLowerCase() !== repo.toLowerCase())
+    ) {
+      return null;
+    }
+    pathInRepo = decodeURIComponent(pathEncoded.replace(/\+/g, ' ')).replace(/^\/+/, '');
+  }
+
+  if (root && pathInRepo.toLowerCase().startsWith(`${root.toLowerCase()}/`)) {
+    return pathInRepo.slice(root.length + 1);
+  }
+  return pathInRepo;
+}
+
 function extForFile(fileName: string, mime: string): string {
   const fromName = path.extname(path.basename(fileName || '')).toLowerCase();
   if (fromName && fromName.length >= 2 && fromName.length <= 12 && /^\.[a-z0-9.]+$/.test(fromName)) {
@@ -78,6 +115,47 @@ async function getGithubBlobSha(
   }
   const data = (await res.json()) as { sha?: string };
   return data.sha ?? null;
+}
+
+async function deleteGithubBlob(
+  owner: string,
+  repo: string,
+  token: string,
+  filePath: string,
+  message: string
+): Promise<boolean> {
+  const sha = await getGithubBlobSha(owner, repo, token, filePath);
+  if (!sha) return false;
+
+  const encoded = filePath
+    .split('/')
+    .filter(Boolean)
+    .map((seg) => encodeURIComponent(seg))
+    .join('/');
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encoded}`;
+  const response = await fetch(url, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `token ${token}`,
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      message,
+      sha,
+      branch: 'main',
+      committer: {
+        name: owner,
+        email: GITHUB_EMAIL() || 'noreply@github.com',
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const err = (await response.json().catch(() => ({}))) as { message?: string };
+    throw new Error(err.message || `GitHub delete failed: ${response.status}`);
+  }
+  return true;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -156,4 +234,57 @@ export async function uploadBufferToGithub(
   }
 
   throw new Error(lastError);
+}
+
+export async function deleteFilesFromGithub(relativePaths: string[]): Promise<{
+  deleted: number;
+  missing: number;
+}> {
+  const user = GITHUB_USER();
+  const repo = GITHUB_REPO();
+  const token = GITHUB_TOKEN();
+  if (!user || !repo || !token) {
+    throw new Error('GitHub upload is not configured on server');
+  }
+
+  const uniquePaths = Array.from(
+    new Set(
+      relativePaths
+        .map(relativeUnderUploadRoot)
+        .filter((p): p is string => !!p)
+    )
+  );
+
+  let deleted = 0;
+  let missing = 0;
+  for (const relative of uniquePaths) {
+    const filePath = fullRepoPath(relative);
+    let removed = false;
+    let lastError = 'GitHub delete failed';
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        removed = await deleteGithubBlob(
+          user,
+          repo,
+          token,
+          filePath,
+          `delete media: ${relative}`
+        );
+        lastError = removed ? '' : 'missing';
+        break;
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+        await sleep(250 * (attempt + 1));
+      }
+    }
+    if (removed) {
+      deleted += 1;
+    } else if (lastError === 'missing' || lastError === 'GitHub delete failed') {
+      missing += 1;
+    } else {
+      throw new Error(lastError);
+    }
+  }
+
+  return { deleted, missing };
 }

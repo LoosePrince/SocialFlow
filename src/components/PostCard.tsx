@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Space, Button, Popover, App, Flex, Typography, theme, Card, Modal, Input, Grid } from 'antd';
+import { Space, Button, Popover, App, Flex, Typography, theme, Card, Modal, Input, Grid, Checkbox } from 'antd';
 import { GithubCdnAvatar } from './GithubCdnAvatar';
 import SmartFeedImage from './SmartFeedImage';
 import { Heart, MessageCircle, Share2, MoreHorizontal, ShieldCheck, Trash2, Pencil } from 'lucide-react';
@@ -73,15 +73,29 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
   };
 
   const handleDelete = () => {
+    let deleteFiles = false;
     modal.confirm({
       title: t('post.deleteConfirmTitle'),
-      content: t('post.deleteConfirmContent'),
+      content: (
+        <Flex vertical gap={12}>
+          <Text>{t('post.deleteConfirmContent')}</Text>
+          <Checkbox onChange={(e) => { deleteFiles = e.target.checked; }}>
+            {t('delete.withFiles')}
+          </Checkbox>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {t('delete.withFilesHint')}
+          </Text>
+        </Flex>
+      ),
       okText: t('post.delete'),
       okType: 'danger',
       cancelText: t('common.cancel'),
       onOk: async () => {
         try {
-          await apiJson(`/api/posts/${post.id}`, { method: 'DELETE' });
+          await apiJson(`/api/posts/${post.id}`, {
+            method: 'DELETE',
+            body: JSON.stringify({ deleteFiles }),
+          });
           message.success(t('post.deleted'));
         } catch {
           message.error(t('post.deleteFailed'));
