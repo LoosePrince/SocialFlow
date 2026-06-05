@@ -7,6 +7,7 @@ import { useUsers } from '../hooks/useUsers';
 import { useFeeds } from '../hooks/useFeeds';
 import { useI18n } from '../context/I18nContext';
 import { getGithubUrl } from '../github';
+import CommentText from '../components/CommentText';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -134,7 +135,7 @@ const Search: React.FC = () => {
                           {String(item.authorName ?? t('search.userFallback'))} {t('search.postSuffix')}
                         </Link>
                         <Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0, marginTop: 4 }} type="secondary">
-                          {String(item.content ?? '').slice(0, 200)}
+                          <CommentText text={String(item.content ?? '').slice(0, 200)} />
                         </Paragraph>
                       </div>
                     </List.Item>
@@ -154,10 +155,10 @@ const Search: React.FC = () => {
                     <List.Item>
                       <div style={{ width: '100%' }}>
                         <Link to={`/project/${item.id}`} style={{ color: token.colorLink, fontWeight: 600 }}>
-                          {String(item.title ?? t('search.projectFallback'))}
+                          <CommentText text={String(item.title ?? t('search.projectFallback'))} singleLine />
                         </Link>
                         <Text type="secondary" ellipsis style={{ display: 'block', marginTop: 4 }}>
-                          {String(item.summary ?? '').slice(0, 160)}
+                          <CommentText text={String(item.summary ?? '').slice(0, 160)} singleLine />
                         </Text>
                       </div>
                     </List.Item>

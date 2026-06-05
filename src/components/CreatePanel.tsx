@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { App, Tabs, Form, Input, Upload, Button, Space, Typography, theme, Grid, Switch, Spin, Segmented, Flex, Divider, Modal } from 'antd';
 import type { UploadFile } from 'antd';
+import type { InputRef } from 'antd';
+import type { TextAreaRef } from 'antd/es/input/TextArea';
 import { ImagePlus, Type, FileText, Send, Projector, Eye } from 'lucide-react';
 import { uploadToGithub, getGithubUrl } from '../github';
 import { useAuth } from '../context/AuthContext';
@@ -9,11 +11,14 @@ import { apiJson } from '../lib/api';
 import PostBodyDisplay from './PostBodyDisplay';
 import ProjectMarkdownContent from './ProjectMarkdownContent';
 import SmartFeedImage from './SmartFeedImage';
+import OwoEmojiPicker from './OwoEmojiPicker';
+import CommentText from './CommentText';
 
 const { Title, Paragraph, Text } = Typography;
 const { useBreakpoint } = Grid;
 
 type PathFile = UploadFile & { path?: string; localPreview?: string };
+type TextInputRef = InputRef | TextAreaRef;
 
 export type CreatePanelVariant = 'modal' | 'page';
 
@@ -59,6 +64,10 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
   const [projectDraftId, setProjectDraftId] = useState(() => crypto.randomUUID());
   const [postForm] = Form.useForm();
   const [projectForm] = Form.useForm();
+  const postContentRef = useRef<TextAreaRef | null>(null);
+  const projectTitleRef = useRef<InputRef | null>(null);
+  const projectSummaryRef = useRef<TextAreaRef | null>(null);
+  const projectContentRef = useRef<TextAreaRef | null>(null);
   const [postFileList, setPostFileList] = useState<UploadFile[]>([]);
   const [projectFileList, setProjectFileList] = useState<UploadFile[]>([]);
   const [previewImage, setPreviewImage] = useState('');
@@ -141,6 +150,27 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
     if (!src) return;
     setPreviewImage(src);
     setPreviewTitle(file.name || src.split('/').pop() || '');
+  };
+
+  const insertIntoFormField = (
+    form: typeof postForm,
+    fieldName: string,
+    textRef: React.RefObject<TextInputRef | null>,
+    placeholder: string
+  ) => {
+    const current = String(form.getFieldValue(fieldName) ?? '');
+    const input = 'input' in (textRef.current ?? {}) 
+      ? (textRef.current as InputRef).input 
+      : (textRef.current as TextAreaRef | null)?.resizableTextArea?.textArea;
+    const start = input?.selectionStart ?? current.length;
+    const end = input?.selectionEnd ?? current.length;
+    const next = `${current.slice(0, start)}${placeholder}${current.slice(end)}`;
+    form.setFieldValue(fieldName, next);
+    window.setTimeout(() => {
+      input?.focus();
+      const cursor = start + placeholder.length;
+      input?.setSelectionRange(cursor, cursor);
+    }, 0);
   };
 
   useEffect(() => {
@@ -388,21 +418,31 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                   ]}
                 />
               </Flex>
-              <Form.Item
-                name="content"
-                rules={[{ required: true, message: t('create.postContentRequired') }]}
-                hidden={postBodyMode === 'preview'}
-              >
-                <Input.TextArea
-                  placeholder={t('create.postPlaceholder')}
-                  rows={isPageMobile ? 6 : variant === 'page' ? 5 : 4}
-                  variant={isPageMobile ? 'outlined' : 'borderless'}
-                  style={{
-                    ...inputFont,
-                    minHeight: isPageMobile ? 140 : undefined,
-                    resize: 'vertical' as const,
-                  }}
-                />
+              <Form.Item hidden={postBodyMode === 'preview'}>
+                <Flex align="start" gap={8}>
+                  <Form.Item
+                    name="content"
+                    noStyle
+                    rules={[{ required: true, message: t('create.postContentRequired') }]}
+                  >
+                    <Input.TextArea
+                      ref={postContentRef}
+                      placeholder={t('create.postPlaceholder')}
+                      rows={isPageMobile ? 6 : variant === 'page' ? 5 : 4}
+                      variant={isPageMobile ? 'outlined' : 'borderless'}
+                      style={{
+                        ...inputFont,
+                        minHeight: isPageMobile ? 140 : undefined,
+                        resize: 'vertical' as const,
+                        flex: 1,
+                      }}
+                    />
+                  </Form.Item>
+                  <OwoEmojiPicker
+                    buttonSize={isPageMobile ? 'large' : 'middle'}
+                    onInsert={(ph) => insertIntoFormField(postForm, 'content', postContentRef, ph)}
+                  />
+                </Flex>
               </Form.Item>
               {postBodyMode === 'preview' && (
                 <div
@@ -546,27 +586,66 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                 />
               </Flex>
               <Form.Item
-                name="title"
                 label={t('create.projectTitle')}
                 hidden={projectBodyMode === 'preview'}
-                rules={[{ required: true, message: t('create.projectTitleRequired') }]}
               >
-                <Input placeholder={t('create.projectTitlePlaceholder')} size="large" style={inputFont} />
+                <Flex align="center" gap={8}>
+                  <Form.Item
+                    name="title"
+                    noStyle
+                    rules={[{ required: true, message: t('create.projectTitleRequired') }]}
+                  >
+                    <Input
+                      ref={projectTitleRef}
+                      placeholder={t('create.projectTitlePlaceholder')}
+                      size="large"
+                      style={{ ...inputFont, flex: 1 }}
+                    />
+                  </Form.Item>
+                  <OwoEmojiPicker
+                    buttonSize={isPageMobile ? 'large' : 'middle'}
+                    onInsert={(ph) => insertIntoFormField(projectForm, 'title', projectTitleRef, ph)}
+                  />
+                </Flex>
               </Form.Item>
-              <Form.Item name="summary" label={t('create.projectSummary')} hidden={projectBodyMode === 'preview'}>
-                <Input.TextArea placeholder={t('create.projectSummaryPlaceholder')} rows={isPageMobile ? 3 : 2} style={inputFont} />
+              <Form.Item label={t('create.projectSummary')} hidden={projectBodyMode === 'preview'}>
+                <Flex align="start" gap={8}>
+                  <Form.Item name="summary" noStyle>
+                    <Input.TextArea
+                      ref={projectSummaryRef}
+                      placeholder={t('create.projectSummaryPlaceholder')}
+                      rows={isPageMobile ? 3 : 2}
+                      style={{ ...inputFont, flex: 1 }}
+                    />
+                  </Form.Item>
+                  <OwoEmojiPicker
+                    buttonSize={isPageMobile ? 'large' : 'middle'}
+                    onInsert={(ph) => insertIntoFormField(projectForm, 'summary', projectSummaryRef, ph)}
+                  />
+                </Flex>
               </Form.Item>
               <Form.Item
-                name="projectContent"
                 label={t('create.projectContent')}
                 hidden={projectBodyMode === 'preview'}
-                rules={[{ required: true, message: t('create.projectContentRequired') }]}
               >
-                <Input.TextArea
-                  placeholder={t('create.projectContentPlaceholder')}
-                  rows={isPageMobile ? 8 : 6}
-                  style={{ ...inputFont, minHeight: isPageMobile ? 160 : undefined }}
-                />
+                <Flex align="start" gap={8}>
+                  <Form.Item
+                    name="projectContent"
+                    noStyle
+                    rules={[{ required: true, message: t('create.projectContentRequired') }]}
+                  >
+                    <Input.TextArea
+                      ref={projectContentRef}
+                      placeholder={t('create.projectContentPlaceholder')}
+                      rows={isPageMobile ? 8 : 6}
+                      style={{ ...inputFont, minHeight: isPageMobile ? 160 : undefined, flex: 1 }}
+                    />
+                  </Form.Item>
+                  <OwoEmojiPicker
+                    buttonSize={isPageMobile ? 'large' : 'middle'}
+                    onInsert={(ph) => insertIntoFormField(projectForm, 'projectContent', projectContentRef, ph)}
+                  />
+                </Flex>
               </Form.Item>
               {projectBodyMode === 'preview' && (
                 <div
@@ -579,11 +658,15 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                   }}
                 >
                   <Title level={4} style={{ marginTop: 0 }}>
-                    {watchedProjectTitle?.trim() ? watchedProjectTitle : t('create.projectNoTitle')}
+                    {watchedProjectTitle?.trim() ? (
+                      <CommentText text={watchedProjectTitle} />
+                    ) : (
+                      t('create.projectNoTitle')
+                    )}
                   </Title>
                   <Paragraph type="secondary" style={{ fontSize: isPageMobile ? 15 : 16, marginBottom: 12 }}>
                     {watchedProjectSummary?.trim()
-                      ? watchedProjectSummary
+                      ? <CommentText text={watchedProjectSummary} />
                       : t('create.projectNoSummary')}
                   </Paragraph>
                   <Divider style={{ margin: '12px 0' }} />

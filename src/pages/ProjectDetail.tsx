@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/I18nContext';
 import { getGithubUrl } from '../github';
 import CommentSection from '../components/CommentSection';
+import CommentText from '../components/CommentText';
 import dayjs from 'dayjs';
 import { toMillis } from '../lib/time';
 import { motion } from 'framer-motion';
@@ -127,8 +128,12 @@ const ProjectDetail: React.FC = () => {
         
         <div style={{ padding: screens.md ? 32 : 16 }}>
           <Tag color={token.colorPrimary} style={{ marginBottom: 12 }}>{t('project.scheme')}</Tag>
-          <Title level={screens.md ? 1 : 2} style={{ marginTop: 0 }}>{project.title}</Title>
-          <Paragraph type="secondary" style={{ fontSize: screens.md ? 18 : 16 }}>{project.summary}</Paragraph>
+          <Title level={screens.md ? 1 : 2} style={{ marginTop: 0 }}>
+            <CommentText text={project.title ?? ''} />
+          </Title>
+          <Paragraph type="secondary" style={{ fontSize: screens.md ? 18 : 16 }}>
+            <CommentText text={project.summary ?? ''} />
+          </Paragraph>
           
           <Divider />
           

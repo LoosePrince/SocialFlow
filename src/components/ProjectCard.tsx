@@ -9,6 +9,7 @@ import { apiJson } from '../lib/api';
 import { toMillis } from '../lib/time';
 import { GithubCdnAvatar } from './GithubCdnAvatar';
 import { GithubCdnImg } from './GithubCdnImg';
+import CommentText from './CommentText';
 
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -224,7 +225,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
               onClick={() => navigate(`/project/${project.id}`)}
               style={{ cursor: 'pointer', fontSize: 16 }}
             >
-              {project.title}
+              <CommentText text={project.title ?? ''} />
             </Text>
             {project.isrecommended && <ShieldCheck size={14} style={{ color: token.colorPrimary }} />}
           </Flex>
@@ -239,7 +240,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
             WebkitBoxOrient: 'vertical',
             overflow: 'hidden'
           }}>
-            {project.summary}
+            <CommentText text={project.summary ?? ''} />
           </div>
         }
       />

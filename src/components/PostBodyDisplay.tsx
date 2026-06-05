@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Typography, theme } from 'antd';
 import { useI18n } from '../context/I18nContext';
+import CommentText from './CommentText';
 
 const { Paragraph } = Typography;
 
@@ -32,8 +33,6 @@ const PostBodyDisplay: React.FC<PostBodyDisplayProps> = ({
   const collapsedMaxHeight = (collapsibleRows ?? 0) * fontSize * lineHeight;
   const shouldCollapse = typeof collapsibleRows === 'number' && collapsibleRows > 0;
 
-  const urlRegex = /(https?:\/\/[^\s]+)/g;
-  const urlPattern = /^https?:\/\/[^\s]+$/;
   const segments = useMemo(() => text.split('\n'), [text]);
 
   useEffect(() => {
@@ -57,35 +56,6 @@ const PostBodyDisplay: React.FC<PostBodyDisplayProps> = ({
     }
   };
 
-  const renderLine = (line: string, lineIndex: number) => {
-    const parts = line.split(urlRegex);
-    return (
-      <React.Fragment key={`line-${lineIndex}`}>
-        {parts.map((part, partIndex) => {
-          if (urlPattern.test(part)) {
-            return (
-              <a
-                key={`link-${lineIndex}-${partIndex}`}
-                href={part}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={stopPropagation}
-                style={{
-                  color: token.colorLink,
-                  wordBreak: 'break-all',
-                }}
-              >
-                {part}
-              </a>
-            );
-          }
-          return <React.Fragment key={`text-${lineIndex}-${partIndex}`}>{part}</React.Fragment>;
-        })}
-        {lineIndex < segments.length - 1 && <br />}
-      </React.Fragment>
-    );
-  };
-
   return (
     <div>
       <Paragraph
@@ -104,7 +74,12 @@ const PostBodyDisplay: React.FC<PostBodyDisplayProps> = ({
             : {}),
         }}
       >
-        {segments.map((line, lineIndex) => renderLine(line, lineIndex))}
+        {segments.map((line, lineIndex) => (
+          <React.Fragment key={`line-${lineIndex}`}>
+            <CommentText text={line} singleLine preventOuterClick={preventOuterClick} />
+            {lineIndex < segments.length - 1 && <br />}
+          </React.Fragment>
+        ))}
       </Paragraph>
       {shouldCollapse && canExpand && (
         <Button

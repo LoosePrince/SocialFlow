@@ -1,9 +1,10 @@
 import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Divider, theme, Typography } from 'antd';
+import { Divider, theme, Tooltip, Typography } from 'antd';
 import type { Components } from 'react-markdown';
 import { GithubCdnImg } from './GithubCdnImg';
+import { useTwikooOwo } from '../hooks/useTwikooOwo';
 
 const { Title, Text } = Typography;
 
@@ -18,6 +19,19 @@ const ProjectMarkdownContent: React.FC<ProjectMarkdownContentProps> = ({
   markdown,
 }) => {
   const { token } = theme.useToken();
+  const { getIcon } = useTwikooOwo();
+
+  const markdownWithOwo = useMemo(
+    () =>
+      (typeof markdown === 'string' ? markdown : '').replace(
+        /\[:(\S+?)\]/g,
+        (raw, id: string) => {
+          const icon = getIcon(id);
+          return icon ? `![owo:${id}](${icon})` : raw;
+        }
+      ),
+    [getIcon, markdown]
+  );
 
   const markdownComponents = useMemo<Components>(
     () => ({
@@ -213,17 +227,54 @@ const ProjectMarkdownContent: React.FC<ProjectMarkdownContentProps> = ({
           {children}
         </td>
       ),
-      img: ({ src, alt }) => (
-        <GithubCdnImg
-          src={src}
-          alt={alt ?? ''}
-          style={{
-            maxWidth: '100%',
-            height: 'auto',
-            borderRadius: token.borderRadius,
-          }}
-        />
-      ),
+      img: ({ src, alt }) => {
+        if (alt?.startsWith('owo:')) {
+          return (
+            <Tooltip
+              title={
+                <img
+                  src={src}
+                  alt=""
+                  style={{
+                    display: 'block',
+                    maxWidth: 150,
+                    maxHeight: 150,
+                    minWidth: 50,
+                    minHeight: 50,
+                    objectFit: 'contain',
+                  }}
+                />
+              }
+            >
+              <img
+                src={src}
+                alt=""
+                loading="lazy"
+                draggable={false}
+                style={{
+                  height: '1.25em',
+                  width: 'auto',
+                  maxWidth: '6em',
+                  verticalAlign: 'middle',
+                  display: 'inline-block',
+                  margin: '0 1px',
+                }}
+              />
+            </Tooltip>
+          );
+        }
+        return (
+          <GithubCdnImg
+            src={src}
+            alt={alt ?? ''}
+            style={{
+              maxWidth: '100%',
+              height: 'auto',
+              borderRadius: token.borderRadius,
+            }}
+          />
+        );
+      },
     }),
     [token]
   );
@@ -233,7 +284,7 @@ const ProjectMarkdownContent: React.FC<ProjectMarkdownContentProps> = ({
       style={{ fontSize: 16, lineHeight: 1.8, color: token.colorText }}
     >
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-        {typeof markdown === 'string' ? markdown : ''}
+        {markdownWithOwo}
       </ReactMarkdown>
     </div>
   );
