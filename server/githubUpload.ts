@@ -1,10 +1,30 @@
 import path from 'node:path';
+import { getFirstRuntimeConfigValue, getRuntimeConfigValue } from './runtimeConfig.js';
 
-const GITHUB_TOKEN = () => process.env.GITHUB_TOKEN ?? '';
-const GITHUB_USER = () => process.env.GITHUB_USER ?? '';
-const GITHUB_REPO = () => process.env.GITHUB_REPO ?? '';
-const GITHUB_UPLOAD_PATH = () => process.env.GITHUB_UPLOAD_PATH ?? 'SocialFlow/';
-const GITHUB_EMAIL = () => process.env.GITHUB_EMAIL ?? '';
+type GithubConfig = {
+  token: string;
+  user: string;
+  repo: string;
+  uploadPath: string;
+  email: string;
+};
+
+async function getGithubConfig(): Promise<GithubConfig> {
+  const [token, user, repo, uploadPath, email] = await Promise.all([
+    getRuntimeConfigValue('GITHUB_TOKEN', ''),
+    getFirstRuntimeConfigValue(['GITHUB_USER', 'VITE_GITHUB_USER'], ''),
+    getFirstRuntimeConfigValue(['GITHUB_REPO', 'VITE_GITHUB_REPO'], ''),
+    getFirstRuntimeConfigValue(['GITHUB_UPLOAD_PATH', 'VITE_GITHUB_UPLOAD_PATH'], 'SocialFlow/'),
+    getRuntimeConfigValue('GITHUB_EMAIL', ''),
+  ]);
+  return {
+    token: token ?? '',
+    user: user ?? '',
+    repo: repo ?? '',
+    uploadPath: uploadPath ?? 'SocialFlow/',
+    email: email ?? '',
+  };
+}
 
 /** CRC-32 查表，输出 8 位小写十六进制（与常见「文件 CRC32」一致） */
 const CRC_TABLE = new Uint32Array(256);
@@ -24,24 +44,24 @@ function crc32Hex(buffer: Buffer): string {
   return ((c ^ 0xffffffff) >>> 0).toString(16).padStart(8, '0');
 }
 
-function uploadRootDir(): string {
-  return GITHUB_UPLOAD_PATH().replace(/^\/+/, '').replace(/\/+$/, '');
+function uploadRootDir(config: GithubConfig): string {
+  return config.uploadPath.replace(/^\/+/, '').replace(/\/+$/, '');
 }
 
 /** 仓库内完整路径（含 SocialFlow/ 等前缀） */
-function fullRepoPath(relativeUnderRoot: string): string {
-  const root = uploadRootDir();
+function fullRepoPath(relativeUnderRoot: string, config: GithubConfig): string {
+  const root = uploadRootDir(config);
   const rel = relativeUnderRoot.replace(/^\/+/, '');
   return root ? `${root}/${rel}` : rel;
 }
 
-function relativeUnderUploadRoot(input: string): string | null {
+function relativeUnderUploadRoot(input: string, config: GithubConfig): string | null {
   const raw = input.trim();
   if (!raw) return null;
 
-  const user = GITHUB_USER();
-  const repo = GITHUB_REPO();
-  const root = uploadRootDir();
+  const user = config.user;
+  const repo = config.repo;
+  const root = uploadRootDir(config);
   let pathInRepo = raw.replace(/^\/+/, '');
 
   if (/^https?:\/\//i.test(raw)) {
@@ -122,7 +142,8 @@ async function deleteGithubBlob(
   repo: string,
   token: string,
   filePath: string,
-  message: string
+  message: string,
+  email: string
 ): Promise<boolean> {
   const sha = await getGithubBlobSha(owner, repo, token, filePath);
   if (!sha) return false;
@@ -146,7 +167,7 @@ async function deleteGithubBlob(
       branch: 'main',
       committer: {
         name: owner,
-        email: GITHUB_EMAIL() || 'noreply@github.com',
+        email: email || 'noreply@github.com',
       },
     }),
   });
@@ -175,9 +196,8 @@ export async function uploadBufferToGithub(
   originalFileName: string,
   mimeType: string
 ): Promise<string> {
-  const user = GITHUB_USER();
-  const repo = GITHUB_REPO();
-  const token = GITHUB_TOKEN();
+  const config = await getGithubConfig();
+  const { user, repo, token } = config;
   if (!user || !repo || !token) {
     throw new Error('GitHub upload is not configured on server');
   }
@@ -185,7 +205,7 @@ export async function uploadBufferToGithub(
   const ext = extForFile(originalFileName, mimeType);
   const hash = crc32Hex(buf);
   const relative = `${layout}/${contentId}/${hash}${ext}`;
-  const filePath = fullRepoPath(relative);
+  const filePath = fullRepoPath(relative, config);
   const base64 = buf.toString('base64');
 
   const encoded = filePath
@@ -204,7 +224,7 @@ export async function uploadBufferToGithub(
       branch: 'main',
       committer: {
         name: user,
-        email: GITHUB_EMAIL() || 'noreply@github.com',
+        email: config.email || 'noreply@github.com',
       },
     };
     if (sha) {
@@ -240,9 +260,8 @@ export async function deleteFilesFromGithub(relativePaths: string[]): Promise<{
   deleted: number;
   missing: number;
 }> {
-  const user = GITHUB_USER();
-  const repo = GITHUB_REPO();
-  const token = GITHUB_TOKEN();
+  const config = await getGithubConfig();
+  const { user, repo, token } = config;
   if (!user || !repo || !token) {
     throw new Error('GitHub upload is not configured on server');
   }
@@ -250,7 +269,7 @@ export async function deleteFilesFromGithub(relativePaths: string[]): Promise<{
   const uniquePaths = Array.from(
     new Set(
       relativePaths
-        .map(relativeUnderUploadRoot)
+        .map((pathValue) => relativeUnderUploadRoot(pathValue, config))
         .filter((p): p is string => !!p)
     )
   );
@@ -258,7 +277,7 @@ export async function deleteFilesFromGithub(relativePaths: string[]): Promise<{
   let deleted = 0;
   let missing = 0;
   for (const relative of uniquePaths) {
-    const filePath = fullRepoPath(relative);
+    const filePath = fullRepoPath(relative, config);
     let removed = false;
     let lastError = 'GitHub delete failed';
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -268,7 +287,8 @@ export async function deleteFilesFromGithub(relativePaths: string[]): Promise<{
           repo,
           token,
           filePath,
-          `delete media: ${relative}`
+          `delete media: ${relative}`,
+          config.email
         );
         lastError = removed ? '' : 'missing';
         break;

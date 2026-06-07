@@ -1,6 +1,6 @@
 import type postgres from 'postgres';
+import { getRuntimeConfigBool, getRuntimeConfigNumber } from './runtimeConfig.js';
 
-/** 用 likes / comments 真实行数重写 posts、projects 上的 likecount、commentcount（纠偏增量更新带来的漂移）。 */
 export async function reconcileEngagementCounts(sql: postgres.Sql): Promise<{
   postsUpdated: number;
   projectsUpdated: number;
@@ -24,41 +24,84 @@ export async function reconcileEngagementCounts(sql: postgres.Sql): Promise<{
   });
 }
 
-const DEFAULT_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2小时
+const DEFAULT_INTERVAL_MS = 2 * 60 * 60 * 1000;
 
-/** 启动后尽快跑一轮，之后按间隔定时执行。 */
-export function startCountReconcileScheduler(sql: postgres.Sql): void {
-  if (process.env.SKIP_COUNT_RECONCILE === '1' || process.env.SKIP_COUNT_RECONCILE === 'true') {
-    console.warn('[scheduler] 已跳过点赞/评论计数校验（SKIP_COUNT_RECONCILE）');
+let schedulerSql: postgres.Sql | null = null;
+let schedulerTimer: ReturnType<typeof setTimeout> | null = null;
+let schedulerGeneration = 0;
+let runInFlight: Promise<void> | null = null;
+
+async function readInterval() {
+  const intervalMs = await getRuntimeConfigNumber(
+    'COUNT_RECONCILE_INTERVAL_MS',
+    DEFAULT_INTERVAL_MS
+  );
+  if (!Number.isFinite(intervalMs) || intervalMs < 60_000) {
+    console.warn(
+      '[scheduler] COUNT_RECONCILE_INTERVAL_MS is invalid or below 60s; using 2h default'
+    );
+    return DEFAULT_INTERVAL_MS;
+  }
+  return intervalMs;
+}
+
+async function runIfEnabled(sql: postgres.Sql) {
+  const skip = await getRuntimeConfigBool('SKIP_COUNT_RECONCILE', false);
+  if (skip) {
+    console.warn('[scheduler] skipped engagement count reconcile');
     return;
   }
 
-  const raw = process.env.COUNT_RECONCILE_INTERVAL_MS;
-  const intervalMs =
-    raw !== undefined && raw !== '' ? Number(raw) : DEFAULT_INTERVAL_MS;
-  if (!Number.isFinite(intervalMs) || intervalMs < 60_000) {
-    console.warn(
-      '[scheduler] COUNT_RECONCILE_INTERVAL_MS 无效或小于 60s，已使用默认 2 小时'
+  const t0 = Date.now();
+  try {
+    console.log('[scheduler] reconciling engagement counts...');
+    const { postsUpdated, projectsUpdated } = await reconcileEngagementCounts(sql);
+    const elapsed = Date.now() - t0;
+    console.log(
+      `[scheduler] reconcile complete - posts ${postsUpdated} rows - projects ${projectsUpdated} rows - ${elapsed}ms`
     );
+  } catch (err) {
+    console.error('[scheduler] reconcile failed:', err);
   }
-  const ms =
-    Number.isFinite(intervalMs) && intervalMs >= 60_000 ? intervalMs : DEFAULT_INTERVAL_MS;
+}
 
-  const run = async () => {
-    const t0 = Date.now();
-    try {
-      console.log('[scheduler] 开始校验并更新点赞/评论计数缓存…');
-      const { postsUpdated, projectsUpdated } = await reconcileEngagementCounts(sql);
-      const elapsed = Date.now() - t0;
-      console.log(
-        `[scheduler] 计数校验完成 · posts 更新 ${postsUpdated} 行 · projects 更新 ${projectsUpdated} 行 · ${elapsed}ms`
-      );
-    } catch (err) {
-      console.error('[scheduler] 计数校验失败:', err);
-    }
-  };
+function clearSchedulerTimer() {
+  if (schedulerTimer) {
+    clearTimeout(schedulerTimer);
+    schedulerTimer = null;
+  }
+}
 
-  void run();
-  setInterval(() => void run(), ms);
-  console.log(`[scheduler] 已启动定时计数校验，间隔 ${Math.round(ms / 1000 / 60)} 分钟`);
+async function scheduleNext(generation: number) {
+  if (!schedulerSql || generation !== schedulerGeneration) return;
+  const ms = await readInterval();
+  if (generation !== schedulerGeneration) return;
+  schedulerTimer = setTimeout(() => {
+    void runNowAndSchedule(generation);
+  }, ms);
+}
+
+async function runNowAndSchedule(generation: number) {
+  if (!schedulerSql || generation !== schedulerGeneration) return;
+  if (!runInFlight) {
+    runInFlight = runIfEnabled(schedulerSql).finally(() => {
+      runInFlight = null;
+    });
+  }
+  await runInFlight;
+  await scheduleNext(generation);
+}
+
+export function refreshCountReconcileScheduler(): void {
+  if (!schedulerSql) return;
+  schedulerGeneration += 1;
+  const generation = schedulerGeneration;
+  clearSchedulerTimer();
+  void runNowAndSchedule(generation);
+}
+
+export function startCountReconcileScheduler(sql: postgres.Sql): void {
+  schedulerSql = sql;
+  console.log('[scheduler] dynamic engagement count scheduler started');
+  refreshCountReconcileScheduler();
 }

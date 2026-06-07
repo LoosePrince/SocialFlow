@@ -1,8 +1,5 @@
 import { uploadMedia, type UploadScope } from './lib/api';
-
-const GITHUB_USER = import.meta.env.VITE_GITHUB_USER;
-const GITHUB_REPO = import.meta.env.VITE_GITHUB_REPO;
-const GITHUB_UPLOAD_PATH = import.meta.env.VITE_GITHUB_UPLOAD_PATH;
+import { getRuntimeConfig } from './runtimeConfig';
 
 export type { UploadScope };
 
@@ -78,9 +75,10 @@ export function resolveGithubCdnUrls(input: string): { primary: string; fallback
     return { primary: s, fallback: s };
   }
 
-  const user = GITHUB_USER || '';
-  const repo = GITHUB_REPO || '';
-  const base = (GITHUB_UPLOAD_PATH || '').replace(/^\/+/, '').replace(/\/$/, '');
+  const config = getRuntimeConfig();
+  const user = config.VITE_GITHUB_USER || '';
+  const repo = config.VITE_GITHUB_REPO || '';
+  const base = (config.VITE_GITHUB_UPLOAD_PATH || '').replace(/^\/+/, '').replace(/\/$/, '');
   const rel = s.replace(/^\/+/, '');
   const path = base ? `${base}/${rel}` : rel;
   return cdnPairFromRepoPath(user, repo, DEFAULT_BRANCH, path);

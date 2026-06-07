@@ -5,7 +5,7 @@ import type { MiddlewareHandler } from 'hono';
 import { cors } from 'hono/cors';
 import { stream } from 'hono/streaming';
 import { sql, listenSql } from './db.js';
-import { startCountReconcileScheduler } from './countReconcile.js';
+import { refreshCountReconcileScheduler, startCountReconcileScheduler } from './countReconcile.js';
 import { runDatabaseStartup } from './migrations.js';
 import {
   authMiddleware,
@@ -20,6 +20,15 @@ import { queryQqScanStatus, requestQqLoginCode } from './qqDevToolAuth.js';
 import { issueSupabaseSessionForEmail } from './supabaseIssueSession.js';
 import { hashPassword, validatePasswordStrength, verifyPassword } from './passwordAuth.js';
 import { getPushPublicKey, isPushEnabled, sendWebPush } from './push.js';
+import {
+  getEnvOnlyConfigStringList,
+  getPublicRuntimeConfig,
+  isEnvOnlyConfigKey,
+  isRuntimeConfigKey,
+  normalizeRuntimeConfigValue,
+  runtimeConfigKeys,
+  syncEnvConfigDefaultsToDatabase,
+} from './runtimeConfig.js';
 
 const PORT = Number(process.env.PORT) || 8787;
 
@@ -85,6 +94,12 @@ type SiteSettingRow = {
   updatedby?: string | null;
 };
 
+const schedulerSettingKeys = new Set([
+  'SKIP_COUNT_RECONCILE',
+  'COUNT_RECONCILE_INTERVAL_MS',
+]);
+const editableRuntimeConfigKeys = new Set<string>(runtimeConfigKeys);
+
 function toPublicProfile(row: ProfileRow) {
   return {
     id: row.id,
@@ -135,7 +150,7 @@ function toAdminProject(row: ProjectRow) {
 function toSiteSetting(row: SiteSettingRow) {
   return {
     key: row.key,
-    value: row.value,
+    value: normalizeRuntimeConfigValue(row.value),
     updatedat: Number(row.updatedat),
     updatedby: row.updatedby ?? null,
   };
@@ -311,7 +326,7 @@ async function emitNotification(params: {
     `;
   }
 
-  if (!isAlert || !isPushEnabled()) return;
+  if (!isAlert || !(await isPushEnabled())) return;
 
   const subscriptions = (await sql`
     SELECT endpoint, p256dh, auth
@@ -349,13 +364,25 @@ async function emitNotification(params: {
 app.use(
   '*',
   cors({
-    origin: process.env.FRONTEND_ORIGIN?.split(',') || ['http://localhost:5173', 'http://127.0.0.1:5173'],
+    origin: (origin) => {
+      const allowed = getEnvOnlyConfigStringList('FRONTEND_ORIGIN', [
+        'http://localhost:5173',
+        'http://localhost:5174',
+        'http://127.0.0.1:5173',
+        'http://127.0.0.1:5174',
+      ]);
+      if (allowed.includes('*')) return origin || '*';
+      if (!origin) return allowed[0] ?? null;
+      return allowed.includes(origin) ? origin : null;
+    },
     allowHeaders: ['Authorization', 'Content-Type'],
     allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   })
 );
 
 app.get('/health', (c) => c.json({ ok: true }));
+
+app.get('/api/public-config', async (c) => c.json(await getPublicRuntimeConfig()));
 
 // ---------- /api/me ----------
 app.get('/api/me', authMiddleware, async (c) => {
@@ -368,7 +395,7 @@ app.get('/api/me', authMiddleware, async (c) => {
   }
 
   const { displayname, photourl, email } = metadataFromJwt(user);
-  const role = isAdminEmail(email) ? 'admin' : 'user';
+  const role = (await isAdminEmail(email)) ? 'admin' : 'user';
   const createdat = Date.now();
 
   const createdRows = await sql`
@@ -614,15 +641,15 @@ app.patch('/api/notification-settings', authMiddleware, async (c) => {
 
 // ---------- web push ----------
 app.get('/api/push/public-key', authMiddleware, async (c) => {
-  if (!isPushEnabled()) {
+  if (!(await isPushEnabled())) {
     return c.json({ enabled: false, publicKey: '' });
   }
-  return c.json({ enabled: true, publicKey: getPushPublicKey() });
+  return c.json({ enabled: true, publicKey: await getPushPublicKey() });
 });
 
 app.post('/api/push/subscribe', authMiddleware, async (c) => {
   const user = c.get('user');
-  if (!isPushEnabled()) return c.json({ error: 'Push unavailable' }, 503);
+  if (!(await isPushEnabled())) return c.json({ error: 'Push unavailable' }, 503);
 
   const body = await c.req.json<{
     subscription?: {
@@ -958,9 +985,11 @@ app.delete('/api/admin/comments/:id', authMiddleware, adminMiddleware, async (c)
 });
 
 app.get('/api/admin/settings', authMiddleware, adminMiddleware, async (c) => {
+  await syncEnvConfigDefaultsToDatabase();
   const rows = await sql`
     SELECT key, value, updatedat, updatedby
     FROM site_settings
+    WHERE key = ANY(${sql.array([...runtimeConfigKeys])})
     ORDER BY key ASC
   `;
   return c.json((rows as unknown as SiteSettingRow[]).map(toSiteSetting));
@@ -972,28 +1001,45 @@ app.put('/api/admin/settings/:key', authMiddleware, adminMiddleware, async (c) =
   if (!key || !/^[a-z0-9_.:-]{1,80}$/i.test(key)) {
     return c.json({ error: 'Invalid setting key' }, 400);
   }
+  if (isEnvOnlyConfigKey(key)) {
+    return c.json({ error: 'This setting must be configured with environment variables' }, 400);
+  }
+  if (!isRuntimeConfigKey(key) || !editableRuntimeConfigKeys.has(key)) {
+    return c.json({ error: 'Unsupported setting key' }, 400);
+  }
 
   const body = await c.req.json<{ value?: unknown }>();
   if (body.value === undefined) {
     return c.json({ error: 'value required' }, 400);
   }
+  const normalizedValue = normalizeRuntimeConfigValue(body.value);
 
   const [row] = await sql`
     INSERT INTO site_settings (key, value, updatedat, updatedby)
-    VALUES (${key}, ${JSON.stringify(body.value)}::jsonb, ${Date.now()}, ${user.sub})
+    VALUES (${key}, ${JSON.stringify(normalizedValue)}::jsonb, ${Date.now()}, ${user.sub})
     ON CONFLICT (key) DO UPDATE SET
       value = EXCLUDED.value,
       updatedat = EXCLUDED.updatedat,
       updatedby = EXCLUDED.updatedby
     RETURNING key, value, updatedat, updatedby
   `;
+  if (schedulerSettingKeys.has(key)) {
+    refreshCountReconcileScheduler();
+  }
   return c.json(toSiteSetting(row as SiteSettingRow));
 });
 
 app.delete('/api/admin/settings/:key', authMiddleware, adminMiddleware, async (c) => {
   const key = c.req.param('key');
   if (!key) return c.json({ error: 'Bad request' }, 400);
+  if (isEnvOnlyConfigKey(key)) {
+    return c.json({ error: 'This setting must be configured with environment variables' }, 400);
+  }
   await sql`DELETE FROM site_settings WHERE key = ${key}`;
+  await syncEnvConfigDefaultsToDatabase();
+  if (schedulerSettingKeys.has(key)) {
+    refreshCountReconcileScheduler();
+  }
   return c.json({ ok: true });
 });
 
@@ -1900,6 +1946,14 @@ await runDatabaseStartup(sql).catch((err) => {
   console.error('[db] 启动阶段数据库处理失败:', err);
   process.exit(1);
 });
+
+const syncedConfigCount = await syncEnvConfigDefaultsToDatabase().catch((err) => {
+  console.warn('[config] failed to sync environment defaults to database:', err);
+  return 0;
+});
+if (syncedConfigCount > 0) {
+  console.log(`[config] synced ${syncedConfigCount} missing config item(s) from environment`);
+}
 
 serve({ fetch: app.fetch, port: PORT }, (info) => {
   console.log(`[server] http://localhost:${info.port}`);

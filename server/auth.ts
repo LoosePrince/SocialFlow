@@ -1,5 +1,9 @@
 import type { MiddlewareHandler } from 'hono';
 import { createRemoteJWKSet, decodeProtectedHeader, jwtVerify, decodeJwt } from 'jose';
+import {
+  getRuntimeConfigValue,
+  getSupabaseProjectUrl,
+} from './runtimeConfig.js';
 
 export interface AuthUser {
   sub: string;
@@ -16,15 +20,10 @@ const getBearer = (c: { req: { header: (n: string) => string | undefined } }): s
   return h.slice(7).trim();
 };
 
-function supabaseProjectBaseUrl(): string {
-  const base = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
-  return base;
-}
-
-function supabaseAuthIssuer(): string | undefined {
-  const explicit = process.env.SUPABASE_JWT_ISSUER?.trim();
+async function supabaseAuthIssuer(baseUrl?: string): Promise<string | undefined> {
+  const explicit = (await getRuntimeConfigValue('SUPABASE_JWT_ISSUER'))?.trim();
   if (explicit) return explicit;
-  const base = supabaseProjectBaseUrl();
+  const base = (baseUrl ?? (await getSupabaseProjectUrl())).replace(/\/$/, '');
   if (!base) return undefined;
   return `${base}/auth/v1`;
 }
@@ -54,8 +53,8 @@ function getJwksForBase(baseUrl: string) {
 /** Supabase 新 JWT Signing Keys：RS256 / ES256 等，用 JWKS 验签（无需 SUPABASE_JWT_SECRET） */
 async function verifyAsymmetricSupabaseJwt(token: string, baseUrl: string): Promise<AuthUser> {
   const jwks = getJwksForBase(baseUrl);
-  const issuer = supabaseAuthIssuer() || `${baseUrl.replace(/\/$/, '')}/auth/v1`;
-  const audience = process.env.SUPABASE_JWT_AUD?.trim() || 'authenticated';
+  const issuer = (await supabaseAuthIssuer(baseUrl)) || `${baseUrl.replace(/\/$/, '')}/auth/v1`;
+  const audience = (await getRuntimeConfigValue('SUPABASE_JWT_AUD', 'authenticated'))?.trim() || 'authenticated';
 
   try {
     const { payload } = await jwtVerify(token, jwks, {
@@ -75,8 +74,8 @@ async function verifyAsymmetricSupabaseJwt(token: string, baseUrl: string): Prom
 /** Legacy：Dashboard JWT Secret，HS256 */
 async function verifyLegacyHs256Jwt(token: string, secret: string): Promise<AuthUser> {
   const key = new TextEncoder().encode(secret);
-  const issuer = supabaseAuthIssuer();
-  const audience = process.env.SUPABASE_JWT_AUD?.trim() || 'authenticated';
+  const issuer = await supabaseAuthIssuer();
+  const audience = (await getRuntimeConfigValue('SUPABASE_JWT_AUD', 'authenticated'))?.trim() || 'authenticated';
 
   const strictOpts = {
     algorithms: ['HS256'],
@@ -109,10 +108,10 @@ export async function verifySupabaseJwt(token: string): Promise<AuthUser> {
     throw new Error('Invalid token');
   }
 
-  const base = supabaseProjectBaseUrl();
+  const base = await getSupabaseProjectUrl();
 
   if (alg === 'HS256') {
-    const secret = process.env.SUPABASE_JWT_SECRET?.trim();
+    const secret = (await getRuntimeConfigValue('SUPABASE_JWT_SECRET'))?.trim();
     if (!secret) {
       throw new Error('SUPABASE_JWT_SECRET is not set (JWT uses HS256)');
     }
@@ -161,8 +160,8 @@ export function metadataFromJwt(user: AuthUser): {
   return { displayname, photourl, email };
 }
 
-export function isAdminEmail(email: string | undefined): boolean {
-  const configured = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+export async function isAdminEmail(email: string | undefined): Promise<boolean> {
+  const configured = (await getRuntimeConfigValue('ADMIN_EMAIL'))?.trim().toLowerCase();
   if (!configured || !email) return false;
   return email.trim().toLowerCase() === configured;
 }

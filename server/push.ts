@@ -1,4 +1,5 @@
 import webpush from 'web-push';
+import { getRuntimeConfigValue } from './runtimeConfig.js';
 
 type PushPayload = {
   title: string;
@@ -13,31 +14,55 @@ type PushSubscriptionRow = {
   auth: string;
 };
 
-const vapidPublicKey = process.env.VAPID_PUBLIC_KEY?.trim() ?? '';
-const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY?.trim() ?? '';
-const vapidSubject = process.env.VAPID_SUBJECT?.trim() || 'mailto:admin@example.com';
+type PushConfig = {
+  publicKey: string;
+  privateKey: string;
+  subject: string;
+};
 
-const pushEnabled = vapidPublicKey.length > 0 && vapidPrivateKey.length > 0;
+let lastVapidSignature = '';
 
-if (pushEnabled) {
-  webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
-} else {
-  console.warn('[push] VAPID keys missing; web push disabled');
+async function getPushConfig(): Promise<PushConfig> {
+  const [publicKey, privateKey, subject] = await Promise.all([
+    getRuntimeConfigValue('VAPID_PUBLIC_KEY', ''),
+    getRuntimeConfigValue('VAPID_PRIVATE_KEY', ''),
+    getRuntimeConfigValue('VAPID_SUBJECT', 'mailto:admin@example.com'),
+  ]);
+  return {
+    publicKey: (publicKey ?? '').trim(),
+    privateKey: (privateKey ?? '').trim(),
+    subject: (subject ?? 'mailto:admin@example.com').trim() || 'mailto:admin@example.com',
+  };
 }
 
-export function isPushEnabled() {
-  return pushEnabled;
+async function applyVapidConfig(): Promise<PushConfig | null> {
+  const config = await getPushConfig();
+  if (!config.publicKey || !config.privateKey) return null;
+
+  const signature = `${config.subject}\n${config.publicKey}\n${config.privateKey}`;
+  if (signature !== lastVapidSignature) {
+    webpush.setVapidDetails(config.subject, config.publicKey, config.privateKey);
+    lastVapidSignature = signature;
+  }
+  return config;
 }
 
-export function getPushPublicKey() {
-  return vapidPublicKey;
+export async function isPushEnabled() {
+  const config = await getPushConfig();
+  return config.publicKey.length > 0 && config.privateKey.length > 0;
+}
+
+export async function getPushPublicKey() {
+  return (await getPushConfig()).publicKey;
 }
 
 export async function sendWebPush(
   subscriptions: PushSubscriptionRow[],
   payload: PushPayload
 ): Promise<string[]> {
-  if (!pushEnabled || subscriptions.length === 0) return [];
+  if (subscriptions.length === 0) return [];
+  const config = await applyVapidConfig();
+  if (!config) return [];
   const invalidEndpoints: string[] = [];
   const body = JSON.stringify(payload);
 

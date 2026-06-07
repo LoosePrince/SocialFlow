@@ -1,9 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-
-function supabaseProjectUrl(): string {
-  const base = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
-  return base;
-}
+import { getRuntimeConfigValue, getSupabaseProjectUrl } from './runtimeConfig.js';
 
 /**
  * 使用 Service Role：admin generateLink(magiclink) + verifyOtp(token_hash) 换取用户 Session，
@@ -15,8 +11,8 @@ export async function issueSupabaseSessionForEmail(email: string): Promise<{
   expires_in: number;
   expires_at?: number;
 }> {
-  const url = supabaseProjectUrl();
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  const url = await getSupabaseProjectUrl();
+  const serviceKey = (await getRuntimeConfigValue('SUPABASE_SERVICE_ROLE_KEY'))?.trim();
   if (!url || !serviceKey) {
     throw new Error('SUPABASE_SERVICE_ROLE_KEY 或 Supabase URL 未配置，无法签发 QQ 登录会话');
   }

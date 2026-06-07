@@ -1,6 +1,7 @@
 import { supabase } from '../supabase';
+import { getApiBase } from '../runtimeConfig';
 
-const base = () => import.meta.env.VITE_API_URL ?? '';
+const base = () => getApiBase();
 
 export function apiUrl(path: string): string {
   const p = path.startsWith('/') ? path : `/${path}`;
