@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
 import { cors } from 'hono/cors';
 import { stream } from 'hono/streaming';
-import { sql, listenSql } from './db.js';
+import { closeDatabaseConnections, databaseMaxConnections, sql, listenSql } from './db.js';
 import { refreshCountReconcileScheduler, startCountReconcileScheduler } from './countReconcile.js';
 import { runDatabaseStartup } from './migrations.js';
 import {
@@ -1955,8 +1955,22 @@ if (syncedConfigCount > 0) {
   console.log(`[config] synced ${syncedConfigCount} missing config item(s) from environment`);
 }
 
-serve({ fetch: app.fetch, port: PORT }, (info) => {
+const server = serve({ fetch: app.fetch, port: PORT }, (info) => {
   console.log(`[server] http://localhost:${info.port}`);
+  console.log(`[db] connection pool max: ${databaseMaxConnections} (+1 LISTEN)`);
   void startListen();
   startCountReconcileScheduler(sql);
+});
+
+async function shutdown() {
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  await closeDatabaseConnections();
+}
+
+process.once('SIGINT', () => {
+  void shutdown().finally(() => process.exit(0));
+});
+
+process.once('SIGTERM', () => {
+  void shutdown().finally(() => process.exit(0));
 });
