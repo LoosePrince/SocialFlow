@@ -127,3 +127,10 @@ CREATE TABLE IF NOT EXISTS public.push_subscriptions (
 
 CREATE INDEX IF NOT EXISTS idx_push_subscriptions_userid
 ON public.push_subscriptions (userid);
+
+CREATE TABLE IF NOT EXISTS public.site_settings (
+  key text PRIMARY KEY,
+  value jsonb NOT NULL DEFAULT '{}'::jsonb,
+  updatedat bigint NOT NULL DEFAULT (extract(epoch from now())::bigint * 1000),
+  updatedby text
+);

@@ -1,5 +1,5 @@
 import { Badge, Button, Dropdown, Flex, Grid, Input, MenuProps, Typography, theme } from 'antd';
-import { Bell, LogOut, PlusCircle, Search, Settings, User as UserIcon } from 'lucide-react';
+import { Bell, LayoutDashboard, LogOut, PlusCircle, Search, Settings, User as UserIcon } from 'lucide-react';
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -34,6 +34,16 @@ const Navbar: React.FC = () => {
       icon: <Settings size={16} />,
       onClick: () => navigate('/settings'),
     },
+    ...(profile?.role === 'admin'
+      ? [
+          {
+            key: 'admin',
+            label: '管理后台',
+            icon: <LayoutDashboard size={16} />,
+            onClick: () => navigate('/admin'),
+          },
+        ]
+      : []),
     {
       type: 'divider',
     },

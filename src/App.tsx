@@ -4,10 +4,12 @@ import React from 'react';
 import { Navigate, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom';
 import MobileTabBar from './components/MobileTabBar';
 import Navbar from './components/Navbar';
+import RequireAdmin from './components/RequireAdmin';
 import RequireAuth from './components/RequireAuth';
 import SiteFooter from './components/SiteFooter';
 import { LoginModalProvider } from './context/LoginModalContext';
 import About from './pages/About';
+import Admin from './pages/Admin';
 import Create from './pages/Create';
 import Home from './pages/Home';
 import Login from './pages/Login';
@@ -34,6 +36,7 @@ const AppLayout: React.FC = () => {
   const location = useLocation();
   const isCompactMobileRoute = location.pathname === '/' || location.pathname.startsWith('/profile');
   const isProjectDetailRoute = location.pathname.startsWith('/project/');
+  const isAdminRoute = location.pathname.startsWith('/admin');
   const mobilePadding = isCompactMobileRoute
     ? '64px 16px calc(50px + env(safe-area-inset-bottom))'
     : isProjectDetailRoute
@@ -55,7 +58,7 @@ const AppLayout: React.FC = () => {
       <main
         style={{
           flex: 1,
-          maxWidth: 680,
+          maxWidth: isAdminRoute ? 1180 : 680,
           width: '100%',
           margin: '0 auto',
           padding: screens.md ? '80px 16px 24px' : mobilePadding,
@@ -70,6 +73,7 @@ const AppLayout: React.FC = () => {
             <Route path="/profile/:uid" element={<Profile />} />
             <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
             <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
+            <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
             <Route path="/notifications" element={<Navigate to="/messages" replace />} />
             <Route path="/messages" element={<RequireAuth><Messages /></RequireAuth>} />
             <Route path="/create" element={<RequireAuth><Create /></RequireAuth>} />

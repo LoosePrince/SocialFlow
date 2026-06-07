@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import type { MiddlewareHandler } from 'hono';
 import { cors } from 'hono/cors';
 import { stream } from 'hono/streaming';
 import { sql, listenSql } from './db.js';
@@ -41,6 +42,49 @@ type ProfileRow = {
   passwordhash?: string | null;
 };
 
+type AdminProfileRow = ProfileRow & {
+  postcount?: string | number;
+  projectcount?: string | number;
+  commentcount?: string | number;
+  likecount?: string | number;
+};
+
+type PostRow = {
+  id: string;
+  authorid: string;
+  createdat: string | number;
+  likecount: number;
+  commentcount: number;
+  isrecommended: boolean;
+  content: string;
+  images?: string[] | null;
+  type: string;
+  profiles?: { displayname?: string; photourl?: string } | null;
+};
+
+type ProjectRow = {
+  id: string;
+  authorid: string;
+  createdat: string | number;
+  likecount: number;
+  commentcount: number;
+  isrecommended: boolean;
+  title: string;
+  summary: string;
+  content: string;
+  coverurl: string;
+  attachments?: string[] | null;
+  type: string;
+  profiles?: { displayname?: string; photourl?: string } | null;
+};
+
+type SiteSettingRow = {
+  key: string;
+  value: unknown;
+  updatedat: string | number;
+  updatedby?: string | null;
+};
+
 function toPublicProfile(row: ProfileRow) {
   return {
     id: row.id,
@@ -53,6 +97,96 @@ function toPublicProfile(row: ProfileRow) {
     haspassword: !!row.passwordhash,
   };
 }
+
+function toAdminProfile(row: AdminProfileRow) {
+  return {
+    ...toPublicProfile(row),
+    postcount: Number(row.postcount ?? 0),
+    projectcount: Number(row.projectcount ?? 0),
+    commentcount: Number(row.commentcount ?? 0),
+    likecount: Number(row.likecount ?? 0),
+  };
+}
+
+function toAdminPost(row: PostRow) {
+  return {
+    ...row,
+    createdat: Number(row.createdat),
+    likecount: Number(row.likecount ?? 0),
+    commentcount: Number(row.commentcount ?? 0),
+    images: Array.isArray(row.images) ? row.images : [],
+    authorName: row.profiles?.displayname ?? '',
+    authorPhoto: row.profiles?.photourl ?? '',
+  };
+}
+
+function toAdminProject(row: ProjectRow) {
+  return {
+    ...row,
+    createdat: Number(row.createdat),
+    likecount: Number(row.likecount ?? 0),
+    commentcount: Number(row.commentcount ?? 0),
+    attachments: Array.isArray(row.attachments) ? row.attachments : [],
+    authorName: row.profiles?.displayname ?? '',
+    authorPhoto: row.profiles?.photourl ?? '',
+  };
+}
+
+function toSiteSetting(row: SiteSettingRow) {
+  return {
+    key: row.key,
+    value: row.value,
+    updatedat: Number(row.updatedat),
+    updatedby: row.updatedby ?? null,
+  };
+}
+
+function parsePositiveInt(value: string | undefined, fallback: number, max: number) {
+  const parsed = Number.parseInt(value ?? '', 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(parsed, max);
+}
+
+function parseOffset(value: string | undefined) {
+  const parsed = Number.parseInt(value ?? '', 10);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return parsed;
+}
+
+function normalizeSearch(value: string | undefined) {
+  return `%${(value ?? '').trim().replace(/[%_\\]/g, '\\$&')}%`;
+}
+
+async function getProfileRole(userId: string): Promise<string | undefined> {
+  const rows = await sql`SELECT role FROM profiles WHERE id = ${userId} LIMIT 1`;
+  return (rows[0] as { role?: string } | undefined)?.role;
+}
+
+async function assertAdminCanRemoveProfile(targetId: string, actorId: string) {
+  if (targetId === actorId) {
+    return 'Cannot remove the current admin account';
+  }
+  const targetRows = await sql`SELECT role FROM profiles WHERE id = ${targetId} LIMIT 1`;
+  const target = targetRows[0] as { role?: string } | undefined;
+  if (!target) return 'User not found';
+  if (target.role !== 'admin') return undefined;
+
+  const countRows = await sql`SELECT count(*)::int AS count FROM profiles WHERE role = 'admin'`;
+  const count = Number((countRows[0] as { count?: number } | undefined)?.count ?? 0);
+  if (count <= 1) {
+    return 'Cannot remove the last admin account';
+  }
+  return undefined;
+}
+
+const adminMiddleware: MiddlewareHandler<{ Variables: Variables }> = async (c, next) => {
+  const user = c.get('user');
+  const role = await getProfileRole(user.sub);
+  if (role !== 'admin') {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+  await next();
+};
 
 type NotifyType = 'recommend' | 'like' | 'comment' | 'reply' | 'delete' | 'mention';
 
@@ -524,6 +658,342 @@ app.post('/api/push/unsubscribe', authMiddleware, async (c) => {
   const endpoint = body.endpoint?.trim() ?? '';
   if (!endpoint) return c.json({ error: 'endpoint required' }, 400);
   await sql`DELETE FROM push_subscriptions WHERE endpoint = ${endpoint} AND userid = ${user.sub}`;
+  return c.json({ ok: true });
+});
+
+// ---------- admin ----------
+app.get('/api/admin/summary', authMiddleware, adminMiddleware, async (c) => {
+  const [profileRows, postRows, projectRows, commentRows, likeRows, recommendRows] = await Promise.all([
+    sql`SELECT count(*)::int AS count FROM profiles`,
+    sql`SELECT count(*)::int AS count FROM posts`,
+    sql`SELECT count(*)::int AS count FROM projects`,
+    sql`SELECT count(*)::int AS count FROM comments`,
+    sql`SELECT count(*)::int AS count FROM likes`,
+    sql`
+      SELECT
+        (SELECT count(*)::int FROM posts WHERE isrecommended = true) AS posts,
+        (SELECT count(*)::int FROM projects WHERE isrecommended = true) AS projects
+    `,
+  ]);
+
+  const recommended = recommendRows[0] as { posts?: number; projects?: number } | undefined;
+  return c.json({
+    users: Number((profileRows[0] as { count?: number } | undefined)?.count ?? 0),
+    posts: Number((postRows[0] as { count?: number } | undefined)?.count ?? 0),
+    projects: Number((projectRows[0] as { count?: number } | undefined)?.count ?? 0),
+    comments: Number((commentRows[0] as { count?: number } | undefined)?.count ?? 0),
+    likes: Number((likeRows[0] as { count?: number } | undefined)?.count ?? 0),
+    recommendedPosts: Number(recommended?.posts ?? 0),
+    recommendedProjects: Number(recommended?.projects ?? 0),
+  });
+});
+
+app.get('/api/admin/users', authMiddleware, adminMiddleware, async (c) => {
+  const q = c.req.query('q')?.trim() ?? '';
+  const limit = parsePositiveInt(c.req.query('limit'), 50, 100);
+  const offset = parseOffset(c.req.query('offset'));
+  const like = normalizeSearch(q);
+
+  const rows = q
+    ? await sql`
+        SELECT pr.*,
+          (SELECT count(*) FROM posts p WHERE p.authorid = pr.id) AS postcount,
+          (SELECT count(*) FROM projects pj WHERE pj.authorid = pr.id) AS projectcount,
+          (SELECT count(*) FROM comments c WHERE c.authorid = pr.id) AS commentcount,
+          (SELECT count(*) FROM likes l WHERE l.userid = pr.id) AS likecount
+        FROM profiles pr
+        WHERE pr.email ILIKE ${like} ESCAPE '\\'
+          OR pr.displayname ILIKE ${like} ESCAPE '\\'
+          OR pr.id ILIKE ${like} ESCAPE '\\'
+          OR COALESCE(pr.qq_uin, '') ILIKE ${like} ESCAPE '\\'
+        ORDER BY pr.createdat DESC
+        LIMIT ${limit}
+        OFFSET ${offset}
+      `
+    : await sql`
+        SELECT pr.*,
+          (SELECT count(*) FROM posts p WHERE p.authorid = pr.id) AS postcount,
+          (SELECT count(*) FROM projects pj WHERE pj.authorid = pr.id) AS projectcount,
+          (SELECT count(*) FROM comments c WHERE c.authorid = pr.id) AS commentcount,
+          (SELECT count(*) FROM likes l WHERE l.userid = pr.id) AS likecount
+        FROM profiles pr
+        ORDER BY pr.createdat DESC
+        LIMIT ${limit}
+        OFFSET ${offset}
+      `;
+
+  const countRows = q
+    ? await sql`
+        SELECT count(*)::int AS count
+        FROM profiles pr
+        WHERE pr.email ILIKE ${like} ESCAPE '\\'
+          OR pr.displayname ILIKE ${like} ESCAPE '\\'
+          OR pr.id ILIKE ${like} ESCAPE '\\'
+          OR COALESCE(pr.qq_uin, '') ILIKE ${like} ESCAPE '\\'
+      `
+    : await sql`SELECT count(*)::int AS count FROM profiles`;
+
+  return c.json({
+    items: (rows as unknown as AdminProfileRow[]).map(toAdminProfile),
+    total: Number((countRows[0] as { count?: number } | undefined)?.count ?? 0),
+  });
+});
+
+app.patch('/api/admin/users/:id', authMiddleware, adminMiddleware, async (c) => {
+  const actor = c.get('user');
+  const id = c.req.param('id');
+  if (!id) return c.json({ error: 'Bad request' }, 400);
+
+  const body = await c.req.json<{
+    displayname?: string;
+    photourl?: string;
+    role?: 'admin' | 'user';
+    qq_uin?: string | null;
+    clearPassword?: boolean;
+  }>();
+
+  const existingRows = await sql`SELECT * FROM profiles WHERE id = ${id} LIMIT 1`;
+  const existing = existingRows[0] as ProfileRow | undefined;
+  if (!existing) return c.json({ error: 'Not found' }, 404);
+
+  const nextRole = body.role ?? existing.role;
+  if (nextRole !== 'admin' && nextRole !== 'user') {
+    return c.json({ error: 'Invalid role' }, 400);
+  }
+  if (existing.role === 'admin' && nextRole !== 'admin') {
+    const reason = await assertAdminCanRemoveProfile(id, actor.sub);
+    if (reason) return c.json({ error: reason }, 400);
+  }
+
+  const displayname = body.displayname !== undefined ? body.displayname.trim() : existing.displayname;
+  if (!displayname) return c.json({ error: 'displayname cannot be empty' }, 400);
+  const photourl = body.photourl !== undefined ? body.photourl.trim() : existing.photourl;
+  const qqUin = body.qq_uin === undefined ? existing.qq_uin ?? null : body.qq_uin?.trim() || null;
+
+  if (qqUin && !QQ_UIN_RE.test(qqUin)) {
+    return c.json({ error: 'Invalid QQ uin' }, 400);
+  }
+  if (qqUin) {
+    const takenRows = await sql`
+      SELECT id FROM profiles WHERE qq_uin = ${qqUin} AND id <> ${id} LIMIT 1
+    `;
+    if (takenRows.length > 0) return c.json({ error: 'QQ uin already bound' }, 409);
+  }
+
+  const rows = body.clearPassword
+    ? await sql`
+        UPDATE profiles
+        SET displayname = ${displayname},
+            photourl = ${photourl},
+            role = ${nextRole},
+            qq_uin = ${qqUin},
+            passwordhash = null
+        WHERE id = ${id}
+        RETURNING *
+      `
+    : await sql`
+        UPDATE profiles
+        SET displayname = ${displayname},
+            photourl = ${photourl},
+            role = ${nextRole},
+            qq_uin = ${qqUin}
+        WHERE id = ${id}
+        RETURNING *
+      `;
+
+  return c.json(toPublicProfile(rows[0] as ProfileRow));
+});
+
+app.delete('/api/admin/users/:id', authMiddleware, adminMiddleware, async (c) => {
+  const actor = c.get('user');
+  const id = c.req.param('id');
+  if (!id) return c.json({ error: 'Bad request' }, 400);
+
+  const reason = await assertAdminCanRemoveProfile(id, actor.sub);
+  if (reason) return c.json({ error: reason }, 400);
+
+  await sql`DELETE FROM profiles WHERE id = ${id}`;
+  return c.json({ ok: true });
+});
+
+app.get('/api/admin/posts', authMiddleware, adminMiddleware, async (c) => {
+  const q = c.req.query('q')?.trim() ?? '';
+  const recommended = c.req.query('recommended');
+  const limit = parsePositiveInt(c.req.query('limit'), 50, 100);
+  const offset = parseOffset(c.req.query('offset'));
+  const like = normalizeSearch(q);
+
+  const rows = await sql`
+    SELECT p.*,
+      json_build_object('displayname', pr.displayname, 'photourl', pr.photourl) AS profiles
+    FROM posts p
+    LEFT JOIN profiles pr ON pr.id = p.authorid
+    WHERE (${q ? sql`p.content ILIKE ${like} ESCAPE '\\'` : sql`true`})
+      AND (${recommended === 'true' ? sql`p.isrecommended = true` : recommended === 'false' ? sql`p.isrecommended = false` : sql`true`})
+    ORDER BY p.createdat DESC
+    LIMIT ${limit}
+    OFFSET ${offset}
+  `;
+  const countRows = await sql`
+    SELECT count(*)::int AS count
+    FROM posts p
+    WHERE (${q ? sql`p.content ILIKE ${like} ESCAPE '\\'` : sql`true`})
+      AND (${recommended === 'true' ? sql`p.isrecommended = true` : recommended === 'false' ? sql`p.isrecommended = false` : sql`true`})
+  `;
+
+  return c.json({
+    items: (rows as unknown as PostRow[]).map(toAdminPost),
+    total: Number((countRows[0] as { count?: number } | undefined)?.count ?? 0),
+  });
+});
+
+app.get('/api/admin/projects', authMiddleware, adminMiddleware, async (c) => {
+  const q = c.req.query('q')?.trim() ?? '';
+  const recommended = c.req.query('recommended');
+  const limit = parsePositiveInt(c.req.query('limit'), 50, 100);
+  const offset = parseOffset(c.req.query('offset'));
+  const like = normalizeSearch(q);
+
+  const rows = await sql`
+    SELECT p.*,
+      json_build_object('displayname', pr.displayname, 'photourl', pr.photourl) AS profiles
+    FROM projects p
+    LEFT JOIN profiles pr ON pr.id = p.authorid
+    WHERE (${
+      q
+        ? sql`p.title ILIKE ${like} ESCAPE '\\' OR p.summary ILIKE ${like} ESCAPE '\\' OR p.content ILIKE ${like} ESCAPE '\\'`
+        : sql`true`
+    })
+      AND (${recommended === 'true' ? sql`p.isrecommended = true` : recommended === 'false' ? sql`p.isrecommended = false` : sql`true`})
+    ORDER BY p.createdat DESC
+    LIMIT ${limit}
+    OFFSET ${offset}
+  `;
+  const countRows = await sql`
+    SELECT count(*)::int AS count
+    FROM projects p
+    WHERE (${
+      q
+        ? sql`p.title ILIKE ${like} ESCAPE '\\' OR p.summary ILIKE ${like} ESCAPE '\\' OR p.content ILIKE ${like} ESCAPE '\\'`
+        : sql`true`
+    })
+      AND (${recommended === 'true' ? sql`p.isrecommended = true` : recommended === 'false' ? sql`p.isrecommended = false` : sql`true`})
+  `;
+
+  return c.json({
+    items: (rows as unknown as ProjectRow[]).map(toAdminProject),
+    total: Number((countRows[0] as { count?: number } | undefined)?.count ?? 0),
+  });
+});
+
+app.get('/api/admin/comments', authMiddleware, adminMiddleware, async (c) => {
+  const q = c.req.query('q')?.trim() ?? '';
+  const contentType = c.req.query('contentType');
+  const limit = parsePositiveInt(c.req.query('limit'), 50, 100);
+  const offset = parseOffset(c.req.query('offset'));
+  const like = normalizeSearch(q);
+
+  const rows = await sql`
+    SELECT c.*,
+      json_build_object('displayname', pr.displayname, 'photourl', pr.photourl) AS profiles,
+      CASE
+        WHEN c.contenttype = 'post' THEN substring(po.content from 1 for 120)
+        WHEN c.contenttype = 'project' THEN pj.title
+        ELSE ''
+      END AS contenttitle
+    FROM comments c
+    LEFT JOIN profiles pr ON pr.id = c.authorid
+    LEFT JOIN posts po ON po.id = c.contentid AND c.contenttype = 'post'
+    LEFT JOIN projects pj ON pj.id = c.contentid AND c.contenttype = 'project'
+    WHERE (${q ? sql`c.text ILIKE ${like} ESCAPE '\\'` : sql`true`})
+      AND (${contentType === 'post' || contentType === 'project' ? sql`c.contenttype = ${contentType}` : sql`true`})
+    ORDER BY c.createdat DESC
+    LIMIT ${limit}
+    OFFSET ${offset}
+  `;
+  const countRows = await sql`
+    SELECT count(*)::int AS count
+    FROM comments c
+    WHERE (${q ? sql`c.text ILIKE ${like} ESCAPE '\\'` : sql`true`})
+      AND (${contentType === 'post' || contentType === 'project' ? sql`c.contenttype = ${contentType}` : sql`true`})
+  `;
+
+  return c.json({
+    items: (rows as Record<string, unknown>[]).map((row) => ({
+      ...row,
+      createdat: Number(row.createdat),
+      authorName: (row.profiles as { displayname?: string } | undefined)?.displayname ?? '',
+      authorPhoto: (row.profiles as { photourl?: string } | undefined)?.photourl ?? '',
+    })),
+    total: Number((countRows[0] as { count?: number } | undefined)?.count ?? 0),
+  });
+});
+
+app.delete('/api/admin/comments/:id', authMiddleware, adminMiddleware, async (c) => {
+  const id = c.req.param('id');
+  if (!id) return c.json({ error: 'Bad request' }, 400);
+
+  const rows = await sql`
+    DELETE FROM comments
+    WHERE id = ${id}
+    RETURNING contentid, contenttype
+  `;
+  const deleted = rows[0] as { contentid?: string; contenttype?: 'post' | 'project' } | undefined;
+  if (!deleted?.contentid || !deleted.contenttype) return c.json({ error: 'Not found' }, 404);
+
+  if (deleted.contenttype === 'post') {
+    await sql`
+      UPDATE posts
+      SET commentcount = (SELECT count(*)::int FROM comments WHERE contenttype = 'post' AND contentid = ${deleted.contentid})
+      WHERE id = ${deleted.contentid}
+    `;
+  } else {
+    await sql`
+      UPDATE projects
+      SET commentcount = (SELECT count(*)::int FROM comments WHERE contenttype = 'project' AND contentid = ${deleted.contentid})
+      WHERE id = ${deleted.contentid}
+    `;
+  }
+  return c.json({ ok: true });
+});
+
+app.get('/api/admin/settings', authMiddleware, adminMiddleware, async (c) => {
+  const rows = await sql`
+    SELECT key, value, updatedat, updatedby
+    FROM site_settings
+    ORDER BY key ASC
+  `;
+  return c.json((rows as unknown as SiteSettingRow[]).map(toSiteSetting));
+});
+
+app.put('/api/admin/settings/:key', authMiddleware, adminMiddleware, async (c) => {
+  const user = c.get('user');
+  const key = c.req.param('key');
+  if (!key || !/^[a-z0-9_.:-]{1,80}$/i.test(key)) {
+    return c.json({ error: 'Invalid setting key' }, 400);
+  }
+
+  const body = await c.req.json<{ value?: unknown }>();
+  if (body.value === undefined) {
+    return c.json({ error: 'value required' }, 400);
+  }
+
+  const [row] = await sql`
+    INSERT INTO site_settings (key, value, updatedat, updatedby)
+    VALUES (${key}, ${JSON.stringify(body.value)}::jsonb, ${Date.now()}, ${user.sub})
+    ON CONFLICT (key) DO UPDATE SET
+      value = EXCLUDED.value,
+      updatedat = EXCLUDED.updatedat,
+      updatedby = EXCLUDED.updatedby
+    RETURNING key, value, updatedat, updatedby
+  `;
+  return c.json(toSiteSetting(row as SiteSettingRow));
+});
+
+app.delete('/api/admin/settings/:key', authMiddleware, adminMiddleware, async (c) => {
+  const key = c.req.param('key');
+  if (!key) return c.json({ error: 'Bad request' }, 400);
+  await sql`DELETE FROM site_settings WHERE key = ${key}`;
   return c.json({ ok: true });
 });
 
