@@ -145,10 +145,10 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
     }
 
     if (skippedImages > 0) {
-      message.warning('图片最多 9 张，已跳过多余图片');
+      message.warning(t('files.skippedImageLimit', { count: 9 }));
     }
     if (candidates.length === 0) {
-      message.info('没有可上传的附件');
+      message.info(t('files.noUploadable'));
       return;
     }
 
@@ -160,7 +160,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
         try {
           uploaded.push(await uploadFileAsset(file));
         } catch (error) {
-          failed.push(error instanceof Error ? error.message : `${file.name} 上传失败`);
+          failed.push(error instanceof Error ? error.message : t('files.uploadFileFailed', { name: file.name }));
         }
       }
 
@@ -173,11 +173,11 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
       }
 
       if (uploaded.length > 0 && failed.length === 0) {
-        message.success(uploaded.length === 1 ? '附件已上传' : `已上传 ${uploaded.length} 个附件`);
+        message.success(uploaded.length === 1 ? t('files.attachmentUploadedOne') : t('files.attachmentUploadedMany', { count: uploaded.length }));
       } else if (uploaded.length > 0) {
-        message.warning(`已上传 ${uploaded.length} 个，${failed.length} 个失败`);
+        message.warning(t('files.uploadedPartial', { success: uploaded.length, failed: failed.length }));
       } else {
-        message.error(failed[0] || '附件上传失败');
+        message.error(failed[0] || t('files.uploadFailed'));
       }
     } finally {
       setAttachmentUploading(false);

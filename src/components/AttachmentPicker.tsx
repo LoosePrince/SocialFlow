@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { formatFileSize, inferFileKind, listFiles, uploadFileAsset, type FileAsset, type FileKind } from '../lib/files';
 import { filesFromClipboard, filesFromDataTransfer, uploadFilesFromAnt } from '../lib/fileInput';
 import FilePreviewModal from './FilePreviewModal';
+import { useI18n } from '../context/I18nContext';
 
 const { Text } = Typography;
 
@@ -17,16 +18,6 @@ type Props = {
   kindFilter?: FileKind | 'all';
   single?: boolean;
 };
-
-const kindOptions = [
-  { label: '全部', value: 'all' },
-  { label: '图片', value: 'image' },
-  { label: '音频', value: 'audio' },
-  { label: '视频', value: 'video' },
-  { label: '文档', value: 'document' },
-  { label: '压缩包', value: 'archive' },
-  { label: '文件', value: 'file' },
-];
 
 const iconMap: Record<FileKind, React.ReactNode> = {
   image: <FileImage size={18} />,
@@ -41,13 +32,14 @@ const AttachmentPicker: React.FC<Props> = ({
   value,
   onChange,
   maxImages,
-  label = '附件',
+  label,
   accept,
   kindFilter = 'all',
   single = false,
 }) => {
   const { message } = App.useApp();
   const { token } = theme.useToken();
+  const { t } = useI18n();
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [files, setFiles] = useState<FileAsset[]>([]);
   const [loading, setLoading] = useState(false);
@@ -59,6 +51,19 @@ const AttachmentPicker: React.FC<Props> = ({
 
   const selectedIds = useMemo(() => new Set(value.map((item) => item.id)), [value]);
   const imageCount = value.filter((item) => item.kind === 'image').length;
+  const displayLabel = label ?? t('files.attachments');
+  const kindOptions = useMemo(
+    () => [
+      { label: t('files.kindAll'), value: 'all' },
+      { label: t('files.kindImage'), value: 'image' },
+      { label: t('files.kindAudio'), value: 'audio' },
+      { label: t('files.kindVideo'), value: 'video' },
+      { label: t('files.kindDocument'), value: 'document' },
+      { label: t('files.kindArchive'), value: 'archive' },
+      { label: t('files.kindFile'), value: 'file' },
+    ],
+    [t]
+  );
 
   useEffect(() => {
     setKind(kindFilter);
@@ -69,7 +74,7 @@ const AttachmentPicker: React.FC<Props> = ({
     try {
       setFiles(await listFiles({ q: query, kind, limit: 100 }));
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '资源库加载失败');
+      message.error(error instanceof Error ? error.message : t('files.libraryLoadFailed'));
     } finally {
       setLoading(false);
     }
@@ -83,12 +88,12 @@ const AttachmentPicker: React.FC<Props> = ({
     const next = single ? [] : [...value];
     for (const asset of assets) {
       if (kindFilter !== 'all' && asset.kind !== kindFilter) {
-        message.warning(kindFilter === 'image' ? '请选择图片文件' : '文件类型不符合要求');
+        message.warning(kindFilter === 'image' ? t('files.chooseImageOnly') : t('files.kindMismatch'));
         continue;
       }
       if (!single && next.some((item) => item.id === asset.id)) continue;
       if (asset.kind === 'image' && maxImages && next.filter((item) => item.kind === 'image').length >= maxImages) {
-        message.warning(`图片最多 ${maxImages} 张`);
+        message.warning(t('files.imageLimit', { count: maxImages }));
         continue;
       }
       next.push(asset);
@@ -125,10 +130,14 @@ const AttachmentPicker: React.FC<Props> = ({
     }
 
     if (skippedByKind > 0) {
-      message.warning(kindFilter === 'image' ? '已跳过非图片文件' : `已跳过 ${skippedByKind} 个类型不符合的文件`);
+      message.warning(
+        kindFilter === 'image'
+          ? t('files.skippedNonImages')
+          : t('files.skippedKindMismatch', { count: skippedByKind })
+      );
     }
-    if (skippedByLimit > 0) {
-      message.warning(`图片最多 ${maxImages} 张，已跳过多余图片`);
+    if (skippedByLimit > 0 && maxImages) {
+      message.warning(t('files.skippedImageLimit', { count: maxImages }));
     }
     return next;
   };
@@ -136,7 +145,7 @@ const AttachmentPicker: React.FC<Props> = ({
   const uploadFiles = async (filesToUpload: File[]) => {
     const candidates = filterUploadFiles(filesToUpload);
     if (candidates.length === 0) {
-      message.info('没有可上传的文件');
+      message.info(t('files.noUploadable'));
       return;
     }
     setUploading(true);
@@ -148,7 +157,7 @@ const AttachmentPicker: React.FC<Props> = ({
           uploaded.push(await uploadFileAsset(file));
           if (single) break;
         } catch (error) {
-          failed.push(error instanceof Error ? error.message : `${file.name} 上传失败`);
+          failed.push(error instanceof Error ? error.message : t('files.uploadFileFailed', { name: file.name }));
         }
       }
       if (uploaded.length > 0) {
@@ -156,11 +165,11 @@ const AttachmentPicker: React.FC<Props> = ({
         if (libraryOpen) void loadLibrary();
       }
       if (uploaded.length > 0 && failed.length === 0) {
-        message.success(uploaded.length === 1 ? '附件已上传' : `已上传 ${uploaded.length} 个附件`);
+        message.success(uploaded.length === 1 ? t('files.attachmentUploadedOne') : t('files.attachmentUploadedMany', { count: uploaded.length }));
       } else if (uploaded.length > 0) {
-        message.warning(`已上传 ${uploaded.length} 个，${failed.length} 个失败`);
+        message.warning(t('files.uploadedPartial', { success: uploaded.length, failed: failed.length }));
       } else {
-        message.error(failed[0] || '上传失败');
+        message.error(failed[0] || t('files.uploadFailed'));
       }
     } finally {
       setUploading(false);
@@ -201,7 +210,7 @@ const AttachmentPicker: React.FC<Props> = ({
 
   const columns: ColumnsType<FileAsset> = [
     {
-      title: '文件',
+      title: t('files.name'),
       dataIndex: 'name',
       render: (_, record) => (
         <Flex align="center" gap={8} style={{ minWidth: 0 }}>
@@ -211,25 +220,25 @@ const AttachmentPicker: React.FC<Props> = ({
       ),
     },
     {
-      title: '类型',
+      title: t('files.kind'),
       dataIndex: 'kind',
       width: 90,
       render: (v) => <Tag>{v}</Tag>,
     },
     {
-      title: '大小',
+      title: t('files.size'),
       dataIndex: 'size',
       width: 100,
       render: (v) => formatFileSize(v),
     },
     {
-      title: '操作',
+      title: t('files.actions'),
       width: 150,
       render: (_, record) => (
         <Space>
-          <Button size="small" onClick={() => setPreview(record)}>预览</Button>
+          <Button size="small" onClick={() => setPreview(record)}>{t('files.preview')}</Button>
           <Button size="small" type="primary" disabled={selectedIds.has(record.id)} onClick={() => addAssets([record])}>
-            选择
+            {t('files.select')}
           </Button>
         </Space>
       ),
@@ -240,7 +249,7 @@ const AttachmentPicker: React.FC<Props> = ({
     <Flex vertical gap={10}>
       <Flex align="center" justify="space-between" wrap="wrap" gap={8}>
         <Text type="secondary">
-          {label}{maxImages ? ` · 图片 ${imageCount}/${maxImages}` : ''}
+          {displayLabel}{maxImages ? ` · ${t('files.imageCount', { current: imageCount, max: maxImages })}` : ''}
         </Text>
         <Space wrap>
           <Upload
@@ -254,11 +263,11 @@ const AttachmentPicker: React.FC<Props> = ({
             multiple={!single}
           >
             <Button icon={<UploadCloud size={15} />} loading={uploading}>
-              上传
+              {t('common.upload')}
             </Button>
           </Upload>
           <Button icon={<FolderOpen size={15} />} onClick={() => setLibraryOpen(true)}>
-            从资源库选择
+            {t('files.chooseFromLibrary')}
           </Button>
         </Space>
       </Flex>
@@ -282,7 +291,7 @@ const AttachmentPicker: React.FC<Props> = ({
         {value.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={single ? '拖拽或粘贴文件，也可点击上传' : '拖拽或粘贴附件到这里'}
+            description={single ? t('files.dropSingleHint') : t('files.dropAttachmentHint')}
           />
         ) : (
           <Flex vertical gap={8}>
@@ -292,19 +301,19 @@ const AttachmentPicker: React.FC<Props> = ({
                 <Text ellipsis style={{ flex: 1 }}>{asset.name}</Text>
                 <Tag>{asset.kind}</Tag>
                 <Text type="secondary" style={{ fontSize: 12 }}>{formatFileSize(asset.size)}</Text>
-                <Button size="small" type="text" onClick={() => setPreview(asset)}>打开</Button>
+                <Button size="small" type="text" onClick={() => setPreview(asset)}>{t('files.open')}</Button>
                 <Button size="small" type="text" icon={<X size={14} />} onClick={() => removeAsset(asset.id)} />
               </Flex>
             ))}
             <Text type="secondary" style={{ fontSize: 12 }}>
-              可继续拖拽或粘贴文件追加上传
+              {t('files.appendHint')}
             </Text>
           </Flex>
         )}
       </div>
 
       <Modal
-        title="选择资源库文件"
+        title={t('files.chooseLibraryTitle')}
         open={libraryOpen}
         onCancel={() => setLibraryOpen(false)}
         footer={null}
@@ -316,7 +325,7 @@ const AttachmentPicker: React.FC<Props> = ({
             <Input
               allowClear
               prefix={<Search size={15} />}
-              placeholder="搜索文件名、路径或类型"
+              placeholder={t('files.searchLibraryPlaceholder')}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onPressEnter={() => void loadLibrary()}
@@ -329,7 +338,7 @@ const AttachmentPicker: React.FC<Props> = ({
               style={{ width: 120 }}
               disabled={kindFilter !== 'all'}
             />
-            <Button icon={<Search size={15} />} onClick={() => void loadLibrary()}>搜索</Button>
+            <Button icon={<Search size={15} />} onClick={() => void loadLibrary()}>{t('files.search')}</Button>
             <Upload
               showUploadList={false}
               accept={accept}
@@ -340,7 +349,7 @@ const AttachmentPicker: React.FC<Props> = ({
               }}
               multiple={!single}
             >
-              <Button icon={<Plus size={15} />} loading={uploading}>上传</Button>
+              <Button icon={<Plus size={15} />} loading={uploading}>{t('common.upload')}</Button>
             </Upload>
           </Flex>
           <Table<FileAsset>

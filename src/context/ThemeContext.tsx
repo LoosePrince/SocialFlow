@@ -42,7 +42,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           token: {
             colorPrimary: '#007AFF',
             borderRadius: 8,
-            borderRadiusLG: 18, // --radius-lg
+            borderRadiusLG: 8,
             fontFamily: "'Outfit', 'Noto Sans SC', sans-serif",
             colorBgContainer: mode === 'dark' ? '#1C1C1E' : '#FFFFFF',
             colorBgLayout: mode === 'dark' ? '#121212' : '#F2F2F7',
@@ -53,12 +53,12 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           },
           components: {
             Button: {
-              borderRadius: 12,
+              borderRadius: 10,
               fontWeight: 500,
               controlHeight: 36,
             },
             Card: {
-              borderRadiusLG: 18,
+              borderRadiusLG: 8,
               paddingLG: 20,
             },
             Input: {

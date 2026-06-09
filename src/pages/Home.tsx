@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useFeeds } from '../hooks/useFeeds';
 import PostCard from '../components/PostCard';
 import ProjectCard from '../components/ProjectCard';
-import { Empty, App, Grid, Modal } from 'antd';
+import { App, Drawer, Grid, Modal } from 'antd';
 import { motion } from 'framer-motion';
 import { HomeFeedSkeleton } from '../components/PageSkeletons';
 import { useAuth } from '../context/AuthContext';
@@ -11,6 +11,7 @@ import { useI18n } from '../context/I18nContext';
 import { toggleLike } from '../utils';
 import CommentSection from '../components/CommentSection';
 import FeedFilter, { FeedFilterValue } from '../components/FeedFilter';
+import ActionEmpty from '../components/ActionEmpty';
 
 const { useBreakpoint } = Grid;
 
@@ -75,9 +76,9 @@ const Home: React.FC = () => {
         exit={{ opacity: 0 }}
         style={{ marginInline: screens.md ? 0 : -16 }}
       >
-        <FeedFilter value={feedFilter} onChange={setFeedFilter} />
+        <FeedFilter value={feedFilter} onChange={setFeedFilter} sticky />
         {visibleFeeds.length === 0 ? (
-          <Empty description={emptyDescription} style={{ marginTop: 100 }} />
+          <ActionEmpty title={emptyDescription} description={t('home.emptyHint')} />
         ) : (
           visibleFeeds.map((item) => (
             <div key={item.id}>
@@ -91,18 +92,37 @@ const Home: React.FC = () => {
         )}
       </motion.div>
 
-      <Modal
-        title={t('home.quickComment')}
-        open={quickCommentPostId !== null}
-        onCancel={() => setQuickCommentPostId(null)}
-        footer={null}
-        destroyOnHidden
-        width={720}
-      >
-        {quickCommentPostId && (
-          <CommentSection contentId={quickCommentPostId} contentType="post" />
-        )}
-      </Modal>
+      {screens.md ? (
+        <Modal
+          title={t('home.quickComment')}
+          open={quickCommentPostId !== null}
+          onCancel={() => setQuickCommentPostId(null)}
+          footer={null}
+          destroyOnHidden
+          width={720}
+        >
+          {quickCommentPostId && (
+            <CommentSection contentId={quickCommentPostId} contentType="post" />
+          )}
+        </Modal>
+      ) : (
+        <Drawer
+          title={t('home.quickComment')}
+          open={quickCommentPostId !== null}
+          onClose={() => setQuickCommentPostId(null)}
+          placement="bottom"
+          height="78vh"
+          destroyOnClose
+          styles={{
+            body: { padding: 16 },
+            content: { borderTopLeftRadius: 16, borderTopRightRadius: 16, overflow: 'hidden' },
+          }}
+        >
+          {quickCommentPostId && (
+            <CommentSection contentId={quickCommentPostId} contentType="post" />
+          )}
+        </Drawer>
+      )}
     </>
   );
 };

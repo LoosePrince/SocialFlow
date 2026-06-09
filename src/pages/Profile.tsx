@@ -12,6 +12,7 @@ import { useUsers } from '../hooks/useUsers';
 import { Settings } from 'lucide-react';
 import { useI18n } from '../context/I18nContext';
 import FeedFilter, { FeedFilterValue } from '../components/FeedFilter';
+import ActionEmpty from '../components/ActionEmpty';
 
 const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -114,10 +115,10 @@ const Profile: React.FC = () => {
         <Title level={4} style={{ marginBottom: 14, paddingInline: screens.md ? 0 : 16 }}>
           {t('profile.publishedContent')}
         </Title>
-        <FeedFilter value={feedFilter} onChange={setFeedFilter} />
+        <FeedFilter value={feedFilter} onChange={setFeedFilter} sticky compact />
         {visibleFeeds.length === 0 ? (
           <div style={{ paddingInline: screens.md ? 0 : 16 }}>
-            <Empty description={emptyDescription} />
+            <ActionEmpty title={emptyDescription} description={t('profile.emptyHint')} />
           </div>
         ) : (
           visibleFeeds.map(item => (

@@ -88,7 +88,20 @@ const ProjectDetail: React.FC = () => {
         margin: '0 auto' 
       }}
     >
-      <Flex justify="space-between" align="center" style={{ marginBottom: 16 }} wrap="wrap" gap={8}>
+      <Flex
+        justify="space-between"
+        align="center"
+        style={{
+          marginBottom: 16,
+          position: screens.md ? 'static' : 'sticky',
+          top: 64,
+          zIndex: 6,
+          background: token.colorBgLayout,
+          padding: screens.md ? 0 : '8px 0',
+        }}
+        wrap="wrap"
+        gap={8}
+      >
         <Button
           type="text"
           icon={<ArrowLeft size={16} />}
@@ -110,11 +123,12 @@ const ProjectDetail: React.FC = () => {
       </Flex>
       
       <Card 
+        className="sf-card"
         variant="borderless"
         style={{ 
           padding: 0, 
           overflow: 'hidden',
-          boxShadow: screens.md ? token.boxShadow : 'none',
+          boxShadow: screens.md ? 'var(--sf-subtle-shadow)' : 'none',
           borderRadius: screens.md ? token.borderRadiusLG : 0,
           background: screens.md ? token.colorBgContainer : 'transparent'
         }}

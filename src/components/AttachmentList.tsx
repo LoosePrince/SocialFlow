@@ -3,6 +3,7 @@ import { Archive, Download, File, FileAudio, FileImage, FileText, FileVideo } fr
 import React, { useMemo, useState } from 'react';
 import { fileAssetUrl, formatFileSize, type FileAsset, type FileKind } from '../lib/files';
 import FilePreviewModal from './FilePreviewModal';
+import { useI18n } from '../context/I18nContext';
 
 const { Text } = Typography;
 
@@ -22,6 +23,7 @@ const iconMap: Record<FileKind, React.ReactNode> = {
 
 const AttachmentList: React.FC<Props> = ({ attachments = [], compact = false }) => {
   const { token } = theme.useToken();
+  const { t } = useI18n();
   const [preview, setPreview] = useState<FileAsset | null>(null);
   const items = useMemo(() => attachments.filter(Boolean), [attachments]);
   if (items.length === 0) return null;
@@ -55,7 +57,7 @@ const AttachmentList: React.FC<Props> = ({ attachments = [], compact = false }) 
               </Flex>
               <Tag style={{ marginInlineEnd: 0 }}>{asset.kind}</Tag>
               <Button size="small" type="text" onClick={() => setPreview(asset)}>
-                打开
+                {t('files.open')}
               </Button>
               {!compact && (
                 <Button size="small" type="text" icon={<Download size={15} />} href={url} download={asset.name} />

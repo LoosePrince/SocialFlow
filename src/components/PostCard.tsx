@@ -123,10 +123,11 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
 
   return (
     <Card 
+      className="sf-feed-card sf-card"
       style={{ 
         marginBottom: screens.md ? 16 : 0,
         background: token.colorBgContainer,
-        boxShadow: screens.md ? token.boxShadow : 'none',
+        boxShadow: screens.md ? 'var(--sf-subtle-shadow)' : 'none',
         border: screens.md ? `1px solid ${token.colorBorderSecondary}` : 'none',
         borderBottom: screens.md ? undefined : `1px solid ${token.colorBorderSecondary}`,
         borderRadius: screens.md ? token.borderRadiusLG : 0,
@@ -281,7 +282,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
 
       {/* Footer */}
       <div style={{ borderTop: screens.md ? `1px solid ${token.colorBorderSecondary}` : 'none', paddingTop: screens.md ? 12 : 0 }}>
-        <Flex gap={16}>
+        <Flex gap={12} className="sf-action-row">
           <Button 
             type="text" 
             icon={
@@ -303,6 +304,8 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
               alignItems: 'center',
               gap: 4,
               padding: '4px 8px',
+              background: liked ? token.colorPrimaryBg : undefined,
+              borderRadius: token.borderRadiusSM,
             }}
           >
             {(post.likecount ?? post.likeCount) || 0}
@@ -316,7 +319,8 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
               display: 'flex',
               alignItems: 'center',
               gap: 4,
-              padding: '4px 8px'
+              padding: '4px 8px',
+              borderRadius: token.borderRadiusSM,
             }}
           >
             {(post.commentcount ?? post.commentCount) || 0}
@@ -325,7 +329,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
             type="text" 
             icon={<Share2 size={18} />} 
             onClick={() => setShareOpen(true)}
-            style={{ color: token.colorTextDescription }} 
+            style={{ color: token.colorTextDescription, borderRadius: token.borderRadiusSM }} 
           />
         </Flex>
         

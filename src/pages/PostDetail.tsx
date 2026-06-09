@@ -80,7 +80,20 @@ const PostDetail: React.FC = () => {
       animate={{ opacity: 1, y: 0 }}
       style={{ maxWidth: 680, margin: '0 auto' }}
     >
-      <Flex justify="space-between" align="center" style={{ marginBottom: 16 }} wrap="wrap" gap={8}>
+      <Flex
+        justify="space-between"
+        align="center"
+        style={{
+          marginBottom: 16,
+          position: screens.md ? 'static' : 'sticky',
+          top: 64,
+          zIndex: 6,
+          background: token.colorBgLayout,
+          padding: screens.md ? 0 : '8px 0',
+        }}
+        wrap="wrap"
+        gap={8}
+      >
         <Button
           type="text"
           icon={<ArrowLeft size={16} />}
@@ -102,10 +115,11 @@ const PostDetail: React.FC = () => {
       </Flex>
       
       <Card 
+        className="sf-card"
         variant="borderless"
         style={{ 
-          boxShadow: token.boxShadow,
-          borderRadius: token.borderRadiusLG,
+          boxShadow: screens.md ? 'var(--sf-subtle-shadow)' : 'none',
+          borderRadius: screens.md ? token.borderRadiusLG : 0,
           marginBottom: 24
         }}
         styles={{ body: { padding: screens.md ? 32 : 16 } }}

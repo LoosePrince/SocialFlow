@@ -7,6 +7,7 @@ import remarkGfm from 'remark-gfm';
 import { Download, ExternalLink } from 'lucide-react';
 import { fileAssetUrl, formatFileSize, isPdf, isPreviewableText, isZip, type FileAsset } from '../lib/files';
 import { GithubCdnImg } from './GithubCdnImg';
+import { useI18n } from '../context/I18nContext';
 
 const { Text, Paragraph } = Typography;
 
@@ -42,6 +43,7 @@ function zipNodesFromEntries(zip: JSZip): DataNode[] {
 
 const FilePreviewModal: React.FC<Props> = ({ asset, open, onClose }) => {
   const { token } = theme.useToken();
+  const { t } = useI18n();
   const [text, setText] = useState('');
   const [tree, setTree] = useState<DataNode[]>([]);
   const [loading, setLoading] = useState(false);
@@ -62,7 +64,7 @@ const FilePreviewModal: React.FC<Props> = ({ asset, open, onClose }) => {
           return res.text();
         })
         .then(setText)
-        .catch(() => setError('文本预览加载失败，可下载后查看。'))
+        .catch(() => setError(t('files.previewTextFailed')))
         .finally(() => setLoading(false));
       return;
     }
@@ -76,7 +78,7 @@ const FilePreviewModal: React.FC<Props> = ({ asset, open, onClose }) => {
         })
         .then((buf) => JSZip.loadAsync(buf))
         .then((zip) => setTree(zipNodesFromEntries(zip)))
-        .catch(() => setError('压缩包目录读取失败，可下载后查看。'))
+        .catch(() => setError(t('files.previewArchiveFailed')))
         .finally(() => setLoading(false));
     }
   }, [asset, open, url]);
@@ -133,7 +135,7 @@ const FilePreviewModal: React.FC<Props> = ({ asset, open, onClose }) => {
       return tree.length > 0 ? (
         <Tree treeData={tree} defaultExpandAll height={420} />
       ) : (
-        <Empty description="压缩包为空或超过在线读取限制" />
+        <Empty description={t('files.archivePreviewEmpty')} />
       );
     }
     return (
@@ -142,14 +144,14 @@ const FilePreviewModal: React.FC<Props> = ({ asset, open, onClose }) => {
           <Text strong>{asset.name}</Text>
         </Paragraph>
         <Text type="secondary">{asset.mime || 'application/octet-stream'} · {formatFileSize(asset.size)}</Text>
-        <Text type="secondary">此文件类型不支持内嵌预览，可下载或在新窗口打开。</Text>
+        <Text type="secondary">{t('files.previewUnsupported')}</Text>
       </Flex>
     );
   };
 
   return (
     <Modal
-      title={asset?.name ?? '文件预览'}
+      title={asset?.name ?? t('files.previewTitle')}
       open={open}
       onCancel={onClose}
       width={asset && (isPdf(asset) || asset.kind === 'image' || asset.kind === 'video') ? 900 : 680}
@@ -157,10 +159,10 @@ const FilePreviewModal: React.FC<Props> = ({ asset, open, onClose }) => {
         asset
           ? [
               <Button key="open" icon={<ExternalLink size={15} />} href={url} target="_blank" rel="noreferrer">
-                新窗口打开
+                {t('files.openInNewWindow')}
               </Button>,
               <Button key="download" type="primary" icon={<Download size={15} />} href={url} download={asset.name}>
-                下载
+                {t('files.download')}
               </Button>,
             ]
           : null

@@ -9,12 +9,14 @@ interface FeedFilterProps {
   value: FeedFilterValue;
   onChange: (value: FeedFilterValue) => void;
   style?: React.CSSProperties;
+  sticky?: boolean;
+  compact?: boolean;
 }
 
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
 
-const FeedFilter: React.FC<FeedFilterProps> = ({ value, onChange, style }) => {
+const FeedFilter: React.FC<FeedFilterProps> = ({ value, onChange, style, sticky = false, compact = false }) => {
   const { t } = useI18n();
   const { token } = theme.useToken();
   const screens = useBreakpoint();
@@ -28,13 +30,14 @@ const FeedFilter: React.FC<FeedFilterProps> = ({ value, onChange, style }) => {
 
   return (
     <Flex
+      className={`sf-feed-toolbar${sticky ? ' sf-feed-toolbar-sticky' : ''}`}
       align={screens.md ? 'center' : 'stretch'}
       justify="space-between"
       vertical={!screens.md}
-      gap={8}
+      gap={compact ? 6 : 8}
       style={{
-        marginBottom: screens.md ? 16 : 0,
-        padding: screens.md ? 0 : '12px 16px',
+        marginBottom: screens.md ? (compact ? 12 : 16) : 0,
+        padding: screens.md ? 0 : compact ? '10px 16px' : '12px 16px',
         borderBottom: screens.md ? undefined : `1px solid ${token.colorBorderSecondary}`,
         background: screens.md ? 'transparent' : token.colorBgContainer,
         ...style,

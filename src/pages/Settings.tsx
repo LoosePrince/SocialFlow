@@ -4,6 +4,8 @@ import { QqOutlined } from '@ant-design/icons';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
 import NotificationSettingsModal from '../components/NotificationSettingsModal';
 import QqQrModal from '../components/QqQrModal';
+import PageHeader from '../components/PageHeader';
+import ResponsiveContainer from '../components/ResponsiveContainer';
 import { Moon, Save, LogOut, Camera, Info, KeyRound, Languages, Bell } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
@@ -172,16 +174,16 @@ const Settings: React.FC = () => {
   };
 
   return (
-    <motion.div 
-      className="main-container"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      style={{ paddingBottom: 100 }}
-    >
-      <Title level={2}>{t('settings.title')}</Title>
+    <ResponsiveContainer>
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        style={{ paddingBottom: 100 }}
+      >
+      <PageHeader title={t('settings.title')} description={t('settings.desc')} />
       
-      <Title level={4} style={{ marginTop: 32 }}>{t('settings.profile')}</Title>
-      <Card className="card" style={{ marginTop: 12 }}>
+      <Title level={4} style={{ marginTop: 24 }}>{t('settings.profile')}</Title>
+      <Card className="sf-card" style={{ marginTop: 12 }}>
         <Form form={form} layout="vertical" onFinish={handleUpdateProfile}>
           <div style={{ display: 'flex', gap: 24, alignItems: 'center', marginBottom: 24 }}>
             <div style={{ position: 'relative' }}>
@@ -221,7 +223,7 @@ const Settings: React.FC = () => {
       </Card>
 
       <Title level={4} style={{ marginTop: 32 }}>{t('settings.security')}</Title>
-      <Card className="card" style={{ marginTop: 12 }}>
+      <Card className="sf-card" style={{ marginTop: 12 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16 }}>
           <div style={{ flex: '1 1 240px' }}>
             <Text strong>{t('settings.passwordLogin')}</Text>
@@ -237,7 +239,7 @@ const Settings: React.FC = () => {
       </Card>
 
       <Title level={4} style={{ marginTop: 32 }}>{t('settings.bindings')}</Title>
-      <Card className="card" style={{ marginTop: 12 }}>
+      <Card className="sf-card" style={{ marginTop: 12 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16 }}>
           <div style={{ flex: '1 1 200px' }}>
             <Text strong>QQ</Text>
@@ -266,7 +268,7 @@ const Settings: React.FC = () => {
       />
       
       <Title level={4} style={{ marginTop: 32 }}>{t('settings.app')}</Title>
-      <Card className="card" style={{ marginTop: 12 }}>
+      <Card className="sf-card" style={{ marginTop: 12 }}>
         <List itemLayout="horizontal">
           <List.Item actions={[<Switch checked={mode === 'dark'} onChange={toggleTheme} />]}>
             <List.Item.Meta avatar={<Moon size={20} />} title={t('settings.darkMode')} />
@@ -406,7 +408,8 @@ const Settings: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
-    </motion.div>
+      </motion.div>
+    </ResponsiveContainer>
   );
 };
 

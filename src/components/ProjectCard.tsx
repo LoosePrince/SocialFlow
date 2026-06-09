@@ -91,12 +91,13 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
 
   return (
     <Card
+      className="sf-feed-card sf-card"
       hoverable={!!screens.md}
       style={{
         marginBottom: screens.md ? 16 : 0,
         position: 'relative',
         overflow: 'hidden',
-        boxShadow: screens.md ? undefined : 'none',
+        boxShadow: screens.md ? 'var(--sf-subtle-shadow)' : 'none',
         border: screens.md ? `1px solid ${token.colorBorderSecondary}` : 'none',
         borderBottom: screens.md ? undefined : `1px solid ${token.colorBorderSecondary}`,
         borderRadius: screens.md ? token.borderRadiusLG : 0
@@ -110,7 +111,9 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
           onClick={() => navigate(`/project/${project.id}`)}
           style={{
             position: 'relative',
-            height: 180,
+            aspectRatio: screens.md ? '16 / 9' : '1.9 / 1',
+            minHeight: screens.md ? 180 : 160,
+            maxHeight: 260,
             overflow: 'hidden',
             borderRadius: 0,
             cursor: 'pointer'
@@ -220,10 +223,17 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
         }
         title={
           <Flex align="center" gap={8}>
-            <Text
-              strong
-              onClick={() => navigate(`/project/${project.id}`)}
-              style={{ cursor: 'pointer', fontSize: 16 }}
+          <Text
+            strong
+            onClick={() => navigate(`/project/${project.id}`)}
+              style={{
+                cursor: 'pointer',
+                fontSize: 16,
+                display: '-webkit-box',
+                WebkitLineClamp: 1,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}
             >
               <CommentText text={project.title ?? ''} />
             </Text>

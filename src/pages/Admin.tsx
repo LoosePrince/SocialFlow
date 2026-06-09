@@ -44,6 +44,8 @@ import PostBodyDisplay from '../components/PostBodyDisplay';
 import { apiJson } from '../lib/api';
 import { toMillis } from '../lib/time';
 import { useAuth } from '../context/AuthContext';
+import PageHeader from '../components/PageHeader';
+import ResponsiveContainer from '../components/ResponsiveContainer';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -865,27 +867,24 @@ const Admin: React.FC = () => {
   );
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      style={{
-        width: '100%',
-        maxWidth: 1120,
-        margin: '0 auto',
-        paddingBottom: 72,
-      }}
-    >
-      <Flex justify="space-between" align="center" wrap="wrap" gap={12} style={{ marginBottom: 20 }}>
-        <div>
-          <Title level={2} style={{ margin: 0 }}>
-            管理后台
-          </Title>
-          <Text type="secondary">全站账号、动态、项目、评论与站点设置管理</Text>
-        </div>
-        <Button icon={<RefreshCw size={16} />} loading={summaryLoading} onClick={refreshActiveTab}>
-          刷新数据
-        </Button>
-      </Flex>
+    <ResponsiveContainer wide>
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        style={{
+          width: '100%',
+          paddingBottom: 72,
+        }}
+      >
+      <PageHeader
+        title="管理后台"
+        description="全站账号、动态、项目、评论与站点设置管理"
+        actions={
+          <Button icon={<RefreshCw size={16} />} loading={summaryLoading} onClick={refreshActiveTab}>
+            刷新数据
+          </Button>
+        }
+      />
 
       <div
         style={{
@@ -896,7 +895,7 @@ const Admin: React.FC = () => {
         }}
       >
         {summaryCards.map((item) => (
-          <Card key={item.title} styles={{ body: { padding: screens.md ? 16 : 12 } }}>
+          <Card key={item.title} className="sf-soft-panel" styles={{ body: { padding: screens.md ? 16 : 12 } }}>
             <Flex align="center" gap={8} style={{ color: token.colorTextSecondary, marginBottom: 4 }}>
               {item.icon}
               <Text type="secondary">{item.title}</Text>
@@ -906,7 +905,7 @@ const Admin: React.FC = () => {
         ))}
       </div>
 
-      <Card styles={{ body: { padding: screens.md ? 20 : 12 } }} style={{ borderRadius: token.borderRadiusLG }}>
+      <Card className="sf-soft-panel" styles={{ body: { padding: screens.md ? 20 : 12 } }} style={{ borderRadius: token.borderRadiusLG }}>
         <Tabs
           activeKey={activeTab}
           onChange={(key) => setActiveTab(key as AdminTab)}
@@ -1213,7 +1212,8 @@ const Admin: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
-    </motion.div>
+      </motion.div>
+    </ResponsiveContainer>
   );
 };
 
