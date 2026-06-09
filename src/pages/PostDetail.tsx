@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { apiJson } from '../lib/api';
+import { apiJson, onApiCacheUpdate } from '../lib/api';
 import { Typography, Button, Card, theme, Flex, Grid } from 'antd';
 import { PostDetailPageSkeleton } from '../components/PageSkeletons';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
@@ -20,6 +20,23 @@ import type { FileAsset } from '../lib/files';
 const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
 
+type PostDetailData = {
+  profiles?: { displayname?: string; photourl?: string };
+  images?: string[];
+  fileattachments?: FileAsset[];
+};
+
+function normalizePost(data: PostDetailData) {
+  const authorPhoto = data.profiles?.photourl || '';
+  return {
+    ...data,
+    authorName: data.profiles?.displayname,
+    authorPhoto: getGithubUrl(authorPhoto),
+    images: ((data.images as string[]) || []).map(getGithubUrl),
+    fileattachments: data.fileattachments ?? [],
+  };
+}
+
 const PostDetail: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -32,25 +49,15 @@ const PostDetail: React.FC = () => {
   const canEditPost = post && (isAdmin || user?.id === post.authorid);
 
   useEffect(() => {
+    const path = id ? `/api/posts/${id}` : '';
     const fetchPost = async () => {
       if (!id) {
         setLoading(false);
         return;
       }
       try {
-        const data = await apiJson<{
-          profiles?: { displayname?: string; photourl?: string };
-          images?: string[];
-          fileattachments?: FileAsset[];
-        }>(`/api/posts/${id}`);
-        const authorPhoto = data.profiles?.photourl || '';
-        setPost({
-          ...data,
-          authorName: data.profiles?.displayname,
-          authorPhoto: getGithubUrl(authorPhoto),
-          images: (data.images as string[] || []).map(getGithubUrl),
-          fileattachments: data.fileattachments ?? [],
-        });
+        const data = await apiJson<PostDetailData>(path);
+        setPost(normalizePost(data));
       } catch {
         setPost(null);
       }
@@ -58,6 +65,12 @@ const PostDetail: React.FC = () => {
     };
 
     void fetchPost();
+    if (!path) return undefined;
+    const unsubCache = onApiCacheUpdate<PostDetailData>(path, (data) => {
+      setPost(normalizePost(data));
+      setLoading(false);
+    });
+    return () => unsubCache();
   }, [id]);
 
   if (loading) {

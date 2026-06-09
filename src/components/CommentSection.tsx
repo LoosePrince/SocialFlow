@@ -11,7 +11,7 @@ import { toggleLike } from '../utils';
 import CommentText from './CommentText';
 import OwoEmojiPicker from './OwoEmojiPicker';
 import dayjs from 'dayjs';
-import { apiJson } from '../lib/api';
+import { apiJson, onApiCacheUpdate } from '../lib/api';
 import { subscribeAppEvents } from '../lib/appSse';
 import { toMillis } from '../lib/time';
 import { useLoginModal } from '../context/LoginModalContext';
@@ -28,6 +28,23 @@ function relativeFromNow(v: unknown) {
 interface CommentSectionProps {
   contentId: string;
   contentType: 'post' | 'project';
+}
+
+type CommentApiItem = {
+  id: string;
+  authorid: string;
+  text: string;
+  createdat: number;
+  parentid?: string | null;
+  profiles?: { displayname?: string; photourl?: string };
+};
+
+function normalizeComments(data: CommentApiItem[]) {
+  return data.map((c) => ({
+    ...c,
+    authorName: c.profiles?.displayname,
+    authorPhoto: c.profiles?.photourl ? getGithubUrl(c.profiles.photourl) : '',
+  }));
 }
 
 const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType }) => {
@@ -74,6 +91,19 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
 
   useEffect(() => {
     void fetchLikeMeta();
+    const path =
+      contentType === 'post' ? `/api/posts/${contentId}` : `/api/projects/${contentId}`;
+    const unsubContent = onApiCacheUpdate<{ likecount?: number }>(path, (row) => {
+      setLikeCount(row.likecount ?? 0);
+    });
+    const statusPath = `/api/likes/status?contentId=${encodeURIComponent(contentId)}`;
+    const unsubStatus = onApiCacheUpdate<{ liked: boolean }>(statusPath, (status) => {
+      setLiked(!!status.liked);
+    });
+    return () => {
+      unsubContent();
+      unsubStatus();
+    };
   }, [fetchLikeMeta]);
 
   useEffect(() => {
@@ -101,39 +131,30 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
   };
 
   const fetchComments = async () => {
+    const path = `/api/comments?contentId=${encodeURIComponent(contentId)}&contentType=${encodeURIComponent(contentType)}`;
     try {
-      const data = await apiJson<
-        Array<{
-          id: string;
-          authorid: string;
-          text: string;
-          createdat: number;
-          parentid?: string | null;
-          profiles?: { displayname?: string; photourl?: string };
-        }>
-      >(
-        `/api/comments?contentId=${encodeURIComponent(contentId)}&contentType=${encodeURIComponent(contentType)}`
-      );
-      setComments(
-        data.map((c) => ({
-          ...c,
-          authorName: c.profiles?.displayname,
-          authorPhoto: c.profiles?.photourl ? getGithubUrl(c.profiles.photourl) : '',
-        }))
-      );
+      const data = await apiJson<CommentApiItem[]>(path);
+      setComments(normalizeComments(data));
     } catch {
-      setComments([]);
+      if (comments.length === 0) setComments([]);
     }
   };
 
   useEffect(() => {
+    const path = `/api/comments?contentId=${encodeURIComponent(contentId)}&contentType=${encodeURIComponent(contentType)}`;
     void fetchComments();
+    const unsubCache = onApiCacheUpdate<CommentApiItem[]>(path, (data) => {
+      setComments(normalizeComments(data));
+    });
     const unsub = subscribeAppEvents((data) => {
       if (data.table === 'comments') {
         void fetchComments();
       }
     });
-    return () => unsub();
+    return () => {
+      unsubCache();
+      unsub();
+    };
   }, [contentId, contentType]);
 
   useEffect(() => {

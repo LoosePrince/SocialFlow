@@ -2,10 +2,105 @@ import { supabase } from '../supabase';
 import { getApiBase } from '../runtimeConfig';
 
 const base = () => getApiBase();
+const API_CACHE_PREFIX = 'socialflow.api-cache.v1:';
+const API_CACHE_EVENT = 'socialflow:api-cache-updated';
 
 export function apiUrl(path: string): string {
   const p = path.startsWith('/') ? path : `/${path}`;
-  return `${base()}${p}`;
+  const apiBase = base();
+  if (!apiBase) {
+    throw new Error('API 地址未配置，请设置 VITE_API_URL');
+  }
+  return `${apiBase}${p}`;
+}
+
+type CachedPayload<T> = {
+  savedAt: number;
+  data: T;
+};
+
+type ApiJsonInit = RequestInit & {
+  /** 读接口默认本地优先；设为 false 时强制等待网络。 */
+  localFirst?: boolean;
+};
+
+type ApiCacheUpdateEvent<T = unknown> = CustomEvent<{
+  cacheKey: string;
+  path: string;
+  data: T;
+  savedAt: number;
+}>;
+
+function methodOf(init: RequestInit): string {
+  return (init.method || 'GET').toUpperCase();
+}
+
+function canUseLocalStorage(): boolean {
+  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+}
+
+async function cacheScope(): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.user?.id || 'anon';
+}
+
+async function cacheKeyFor(path: string): Promise<string> {
+  return `${API_CACHE_PREFIX}${await cacheScope()}:${apiUrl(path)}`;
+}
+
+function readCache<T>(cacheKey: string): CachedPayload<T> | null {
+  if (!canUseLocalStorage()) return null;
+  try {
+    const raw = window.localStorage.getItem(cacheKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CachedPayload<T>;
+    if (!parsed || typeof parsed.savedAt !== 'number' || !('data' in parsed)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache<T>(cacheKey: string, path: string, data: T) {
+  if (!canUseLocalStorage()) return;
+  const savedAt = Date.now();
+  try {
+    window.localStorage.setItem(cacheKey, JSON.stringify({ savedAt, data }));
+    window.dispatchEvent(
+      new CustomEvent(API_CACHE_EVENT, {
+        detail: { cacheKey, path, data, savedAt },
+      })
+    );
+  } catch (err) {
+    console.warn('[api] cache write failed:', err);
+  }
+}
+
+function clearApiCache() {
+  if (!canUseLocalStorage()) return;
+  try {
+    const keys: string[] = [];
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (key?.startsWith(API_CACHE_PREFIX)) keys.push(key);
+    }
+    keys.forEach((key) => window.localStorage.removeItem(key));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function onApiCacheUpdate<T>(
+  path: string,
+  handler: (data: T, meta: { savedAt: number }) => void
+): () => void {
+  const listener = (event: Event) => {
+    const detail = (event as ApiCacheUpdateEvent<T>).detail;
+    if (!detail || detail.path !== path) return;
+    handler(detail.data, { savedAt: detail.savedAt });
+  };
+  window.addEventListener(API_CACHE_EVENT, listener);
+  return () => window.removeEventListener(API_CACHE_EVENT, listener);
 }
 
 /** 合并并发 refresh，避免每个 401 都打 /auth/v1/token 导致 429 */
@@ -57,13 +152,38 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   return res;
 }
 
-export async function apiJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function apiJsonFromNetwork<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await apiFetch(path, init);
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as { error?: string };
     throw new Error(err.error || res.statusText || String(res.status));
   }
   return res.json() as Promise<T>;
+}
+
+export async function apiJson<T>(path: string, init: ApiJsonInit = {}): Promise<T> {
+  const { localFirst = true, ...requestInit } = init;
+  const isRead = methodOf(requestInit) === 'GET' && requestInit.body === undefined;
+
+  if (!isRead) {
+    const data = await apiJsonFromNetwork<T>(path, requestInit);
+    clearApiCache();
+    return data;
+  }
+
+  const cacheKey = await cacheKeyFor(path);
+  const cached = localFirst ? readCache<T>(cacheKey) : null;
+
+  if (cached) {
+    void apiJsonFromNetwork<T>(path, { ...requestInit, cache: 'no-store' })
+      .then((fresh) => writeCache(cacheKey, path, fresh))
+      .catch((err) => console.debug('[api] background refresh failed:', err));
+    return cached.data;
+  }
+
+  const fresh = await apiJsonFromNetwork<T>(path, { ...requestInit, cache: 'no-store' });
+  writeCache(cacheKey, path, fresh);
+  return fresh;
 }
 
 export type UploadScope = 'post' | 'project' | 'profile';

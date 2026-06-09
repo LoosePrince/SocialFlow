@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SocialFlow</string>
+    <string name="title_activity_main">SocialFlow</string>
+    <string name="package_name">plus.xzt.socialflow</string>
+    <string name="custom_url_scheme">plus.xzt.socialflow</string>
+</resources>

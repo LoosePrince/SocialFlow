@@ -15,8 +15,9 @@ const fallbackConfig: PublicRuntimeConfig = {
   VITE_GITHUB_UPLOAD_PATH: import.meta.env.VITE_GITHUB_UPLOAD_PATH ?? '',
   VITE_API_URL: import.meta.env.VITE_API_URL ?? '',
 };
+const CONFIG_CACHE_KEY = 'socialflow.runtime-config.v1';
 
-let runtimeConfig: PublicRuntimeConfig = { ...fallbackConfig };
+let runtimeConfig: PublicRuntimeConfig = mergePublicConfig(fallbackConfig);
 let loadPromise: Promise<PublicRuntimeConfig> | null = null;
 
 function delay(ms: number): Promise<void> {
@@ -54,12 +55,24 @@ function normalizeConfigString(value: string): string {
   return current;
 }
 
+function normalizeApiUrl(value: string): string {
+  const current = normalizeConfigString(value);
+  if (!current) return '';
+  if (/^https?:\/\//i.test(current)) return current.replace(/\/$/, '');
+  return `https://${current.replace(/^\/+/, '').replace(/\/$/, '')}`;
+}
+
 function normalizePublicConfig(config: Partial<PublicRuntimeConfig>): Partial<PublicRuntimeConfig> {
   return Object.fromEntries(
-    Object.entries(config).map(([key, value]) => [
-      key,
-      typeof value === 'string' ? normalizeConfigString(value) : value,
-    ])
+    Object.entries(config).map(([key, value]) => {
+      const normalized =
+        typeof value === 'string'
+          ? key === 'VITE_API_URL'
+            ? normalizeApiUrl(value)
+            : normalizeConfigString(value)
+          : value;
+      return [key, normalized];
+    })
   ) as Partial<PublicRuntimeConfig>;
 }
 
@@ -75,10 +88,19 @@ function requiredConfigErrors(config: PublicRuntimeConfig): string[] {
 }
 
 function mergePublicConfig(config: Partial<PublicRuntimeConfig>): PublicRuntimeConfig {
+  const normalizedFallback = normalizePublicConfig(fallbackConfig);
+  const normalizedConfig = normalizePublicConfig(config);
   return {
-    ...fallbackConfig,
-    ...normalizePublicConfig(config),
-    VITE_API_URL: fallbackConfig.VITE_API_URL,
+    VITE_SUPABASE_URL: normalizedConfig.VITE_SUPABASE_URL ?? normalizedFallback.VITE_SUPABASE_URL ?? '',
+    VITE_SUPABASE_PUBLISHABLE_KEY:
+      normalizedConfig.VITE_SUPABASE_PUBLISHABLE_KEY ??
+      normalizedFallback.VITE_SUPABASE_PUBLISHABLE_KEY ??
+      '',
+    VITE_GITHUB_USER: normalizedConfig.VITE_GITHUB_USER ?? normalizedFallback.VITE_GITHUB_USER ?? '',
+    VITE_GITHUB_REPO: normalizedConfig.VITE_GITHUB_REPO ?? normalizedFallback.VITE_GITHUB_REPO ?? '',
+    VITE_GITHUB_UPLOAD_PATH:
+      normalizedConfig.VITE_GITHUB_UPLOAD_PATH ?? normalizedFallback.VITE_GITHUB_UPLOAD_PATH ?? '',
+    VITE_API_URL: normalizedConfig.VITE_API_URL ?? normalizedFallback.VITE_API_URL ?? '',
   };
 }
 
@@ -91,29 +113,70 @@ export function getRuntimeConfig(): PublicRuntimeConfig {
 }
 
 export function getApiBase(): string {
-  return runtimeConfig.VITE_API_URL || fallbackConfig.VITE_API_URL || '';
+  return runtimeConfig.VITE_API_URL || normalizeApiUrl(fallbackConfig.VITE_API_URL) || '';
+}
+
+function hasRequiredBuildConfig(): boolean {
+  return requiredConfigErrors(mergePublicConfig(fallbackConfig)).length === 0;
+}
+
+async function fetchRemoteRuntimeConfig(): Promise<PublicRuntimeConfig> {
+  const base = normalizeApiUrl(fallbackConfig.VITE_API_URL);
+  if (!base) {
+    throw new Error('VITE_API_URL is required');
+  }
+
+  const res = await fetch(`${base}/api/public-config`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`public config failed: ${res.status}`);
+  const config = (await res.json()) as Partial<PublicRuntimeConfig>;
+  const nextConfig = mergePublicConfig(config);
+  const errors = requiredConfigErrors(nextConfig);
+  if (errors.length > 0) {
+    throw new Error(errors.join('; '));
+  }
+  runtimeConfig = nextConfig;
+  writeCachedRuntimeConfig(nextConfig);
+  return runtimeConfig;
+}
+
+function readCachedRuntimeConfig(): PublicRuntimeConfig | null {
+  try {
+    const raw = window.localStorage.getItem(CONFIG_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PublicRuntimeConfig>;
+    const config = mergePublicConfig(parsed);
+    return requiredConfigErrors(config).length > 0 ? null : config;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedRuntimeConfig(config: PublicRuntimeConfig) {
+  try {
+    window.localStorage.setItem(CONFIG_CACHE_KEY, JSON.stringify(config));
+  } catch {
+    /* ignore */
+  }
 }
 
 export async function loadRuntimeConfig(): Promise<PublicRuntimeConfig> {
   if (!loadPromise) {
     loadPromise = (async () => {
-      const base = fallbackConfig.VITE_API_URL || '';
-      const fallbackErrors = requiredConfigErrors(fallbackConfig);
+      if (hasRequiredBuildConfig()) {
+        runtimeConfig = mergePublicConfig(fallbackConfig);
+        void fetchRemoteRuntimeConfig().catch((err) => {
+          console.warn('[config] background public config refresh failed:', err);
+        });
+        return runtimeConfig;
+      }
+
+      const fallbackErrors = requiredConfigErrors(runtimeConfig);
       const maxAttempts = fallbackErrors.length > 0 ? 30 : 3;
       let lastError: unknown;
 
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
-          const res = await fetch(`${base}/api/public-config`, { cache: 'no-store' });
-          if (!res.ok) throw new Error(`public config failed: ${res.status}`);
-          const config = (await res.json()) as Partial<PublicRuntimeConfig>;
-          const nextConfig = mergePublicConfig(config);
-          const errors = requiredConfigErrors(nextConfig);
-          if (errors.length > 0) {
-            throw new Error(errors.join('; '));
-          }
-          runtimeConfig = nextConfig;
-          return runtimeConfig;
+          return await fetchRemoteRuntimeConfig();
         } catch (err) {
           lastError = err;
           if (attempt < maxAttempts) {
@@ -122,7 +185,14 @@ export async function loadRuntimeConfig(): Promise<PublicRuntimeConfig> {
         }
       }
 
-      runtimeConfig = { ...fallbackConfig };
+      const cachedConfig = readCachedRuntimeConfig();
+      if (cachedConfig) {
+        runtimeConfig = cachedConfig;
+        console.warn('[config] using cached runtime config:', lastError);
+        return runtimeConfig;
+      }
+
+      runtimeConfig = mergePublicConfig(fallbackConfig);
       const errors = requiredConfigErrors(runtimeConfig);
       if (errors.length > 0) {
         throw new Error(

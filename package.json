@@ -9,6 +9,10 @@
     "dev:server": "tsx watch server/index.ts",
     "build": "npm run build:client",
     "build:client": "tsc && vite build",
+    "android:sync": "npm run build:client && cap sync android",
+    "android:apk": "npm run android:release",
+    "android:debug": "npm run android:sync && cd android && gradlew.bat assembleDebug",
+    "android:release": "npm run android:sync && cd android && gradlew.bat assembleRelease",
     "build:server": "tsc -p tsconfig.server.json && node --input-type=module -e \"import fs from 'node:fs'; fs.cpSync('server/migrations','dist-server/migrations',{recursive:true});\"",
     "start": "node dist-server/index.js",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
@@ -37,6 +41,9 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/cli": "^8.4.0",
+    "@capacitor/core": "^8.4.0",
     "@types/node": "^25.6.0",
     "@types/react": "^18.2.37",
     "@types/react-dom": "^18.2.15",

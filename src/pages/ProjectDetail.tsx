@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { apiJson } from '../lib/api';
+import { apiJson, onApiCacheUpdate } from '../lib/api';
 import { Typography, Button, Tag, Divider, Flex, theme, Card, Grid } from 'antd';
 import { ProjectDetailPageSkeleton } from '../components/PageSkeletons';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
@@ -25,6 +25,25 @@ import {
 const { Title, Text, Paragraph } = Typography;
 const { useBreakpoint } = Grid;
 
+type ProjectDetailData = {
+  profiles?: { displayname?: string; photourl?: string };
+  coverurl?: string;
+  attachments?: string[];
+  fileattachments?: FileAsset[];
+};
+
+function normalizeProject(data: ProjectDetailData) {
+  const authorPhoto = data.profiles?.photourl || '';
+  const oldAttachments = ((data.attachments as string[]) || []).map((path) => legacyFileAssetFromPath(path));
+  return {
+    ...data,
+    authorName: data.profiles?.displayname,
+    authorPhoto: getGithubUrl(authorPhoto),
+    coverUrl: data.coverurl ? getGithubUrl(data.coverurl) : '',
+    attachments: mergeFileAssetsByPath([...(data.fileattachments ?? []), ...oldAttachments]),
+  };
+}
+
 const ProjectDetail: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -37,27 +56,15 @@ const ProjectDetail: React.FC = () => {
   const canEditProject = project && (isAdmin || user?.id === project.authorid);
 
   useEffect(() => {
+    const path = id ? `/api/projects/${id}` : '';
     const fetchProject = async () => {
       if (!id) {
         setLoading(false);
         return;
       }
       try {
-        const data = await apiJson<{
-          profiles?: { displayname?: string; photourl?: string };
-          coverurl?: string;
-          attachments?: string[];
-          fileattachments?: FileAsset[];
-        }>(`/api/projects/${id}`);
-        const authorPhoto = data.profiles?.photourl || '';
-        const oldAttachments = (data.attachments as string[] || []).map((path) => legacyFileAssetFromPath(path));
-        setProject({
-          ...data,
-          authorName: data.profiles?.displayname,
-          authorPhoto: getGithubUrl(authorPhoto),
-          coverUrl: data.coverurl ? getGithubUrl(data.coverurl) : '',
-          attachments: mergeFileAssetsByPath([...(data.fileattachments ?? []), ...oldAttachments]),
-        });
+        const data = await apiJson<ProjectDetailData>(path);
+        setProject(normalizeProject(data));
       } catch {
         setProject(null);
       }
@@ -65,6 +72,12 @@ const ProjectDetail: React.FC = () => {
     };
 
     void fetchProject();
+    if (!path) return undefined;
+    const unsubCache = onApiCacheUpdate<ProjectDetailData>(path, (data) => {
+      setProject(normalizeProject(data));
+      setLoading(false);
+    });
+    return () => unsubCache();
   }, [id]);
 
   if (loading) {

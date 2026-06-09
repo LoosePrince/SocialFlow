@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import './index.css'
 import { App } from 'antd'
+import { Capacitor } from '@capacitor/core'
 import { loadRuntimeConfig } from './runtimeConfig'
 
 function renderStartupError(error: unknown) {
@@ -21,8 +22,19 @@ function renderStartupError(error: unknown) {
   )
 }
 
+function registerAppServiceWorker() {
+  if (Capacitor.isNativePlatform()) return;
+  if (!('serviceWorker' in navigator)) return;
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.debug('[sw] register failed:', err);
+    });
+  });
+}
+
 async function bootstrap() {
   await loadRuntimeConfig()
+  registerAppServiceWorker()
 
   const [
     { default: SocialApp },

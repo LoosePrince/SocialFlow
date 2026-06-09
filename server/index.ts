@@ -596,6 +596,9 @@ app.use(
         'http://localhost:5174',
         'http://127.0.0.1:5173',
         'http://127.0.0.1:5174',
+        'https://localhost',
+        'capacitor://localhost',
+        'ionic://localhost',
       ]);
       if (allowed.includes('*')) return origin || '*';
       if (!origin) return allowed[0] ?? null;
