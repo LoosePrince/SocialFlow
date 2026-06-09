@@ -8,10 +8,12 @@ import dayjs from 'dayjs';
 import LikeList from './LikeList';
 import CommentPreview from './CommentPreview';
 import PostBodyDisplay from './PostBodyDisplay';
+import AttachmentList from './AttachmentList';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/I18nContext';
 import { apiJson } from '../lib/api';
 import { toMillis } from '../lib/time';
+import type { FileAsset } from '../lib/files';
 
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -31,6 +33,9 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
   const { token } = theme.useToken();
   const screens = useBreakpoint();
   const images = post.images || [];
+  const nonImageAttachments = ((post.fileattachments as FileAsset[] | undefined) ?? []).filter(
+    (asset) => asset.kind !== 'image'
+  );
   const maxVisibleImages = screens.md ? 9 : 3;
   const displayImages = images.slice(0, maxVisibleImages);
   const remainingCount = Math.max(0, images.length - maxVisibleImages);
@@ -269,6 +274,9 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
             ))}
           </div>
         )}
+        <div role="presentation" onClick={(e) => e.stopPropagation()} style={{ cursor: 'default' }}>
+          <AttachmentList attachments={nonImageAttachments} compact />
+        </div>
       </div>
 
       {/* Footer */}

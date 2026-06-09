@@ -1,5 +1,5 @@
 import { Badge, Button, Dropdown, Flex, Grid, Input, MenuProps, Typography, theme } from 'antd';
-import { Bell, LayoutDashboard, LogOut, PlusCircle, Search, Settings, User as UserIcon } from 'lucide-react';
+import { Bell, FolderOpen, LayoutDashboard, LogOut, PlusCircle, Search, Settings, User as UserIcon } from 'lucide-react';
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -27,6 +27,12 @@ const Navbar: React.FC = () => {
       label: t('nav.profile'),
       icon: <UserIcon size={16} />,
       onClick: () => navigate('/profile'),
+    },
+    {
+      key: 'files',
+      label: t('nav.files'),
+      icon: <FolderOpen size={16} />,
+      onClick: () => navigate('/files'),
     },
     {
       key: 'settings',

@@ -11,9 +11,11 @@ import { useI18n } from '../context/I18nContext';
 import { getGithubUrl } from '../github';
 import CommentSection from '../components/CommentSection';
 import PostBodyDisplay from '../components/PostBodyDisplay';
+import AttachmentList from '../components/AttachmentList';
 import dayjs from 'dayjs';
 import { toMillis } from '../lib/time';
 import { motion } from 'framer-motion';
+import type { FileAsset } from '../lib/files';
 
 const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -39,6 +41,7 @@ const PostDetail: React.FC = () => {
         const data = await apiJson<{
           profiles?: { displayname?: string; photourl?: string };
           images?: string[];
+          fileattachments?: FileAsset[];
         }>(`/api/posts/${id}`);
         const authorPhoto = data.profiles?.photourl || '';
         setPost({
@@ -46,6 +49,7 @@ const PostDetail: React.FC = () => {
           authorName: data.profiles?.displayname,
           authorPhoto: getGithubUrl(authorPhoto),
           images: (data.images as string[] || []).map(getGithubUrl),
+          fileattachments: data.fileattachments ?? [],
         });
       } catch {
         setPost(null);
@@ -66,6 +70,9 @@ const PostDetail: React.FC = () => {
   if (!post) return <div style={{ padding: 24, textAlign: 'center' }}><Text type="secondary">{t('post.notFound')}</Text></div>;
 
   const postTimeMs = toMillis(post.createdat ?? post.createdAt);
+  const nonImageAttachments = ((post.fileattachments as FileAsset[] | undefined) ?? []).filter(
+    (asset) => asset.kind !== 'image'
+  );
 
   return (
     <motion.div 
@@ -146,6 +153,7 @@ const PostDetail: React.FC = () => {
             ))}
           </Flex>
         )}
+        <AttachmentList attachments={nonImageAttachments} />
       </Card>
 
       <div style={{ marginTop: 24 }}>

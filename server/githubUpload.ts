@@ -183,7 +183,12 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export type UploadLayout = 'post' | 'project' | 'profile';
+export type UploadLayout = 'post' | 'project' | 'profile' | 'file';
+
+export type GithubUploadResult = {
+  path: string;
+  checksum: string;
+};
 
 /**
  * 上传到 GitHub Contents，路径为 `{GITHUB_UPLOAD_PATH}{scope}/{contentId}/{crc32}{ext}`。
@@ -196,6 +201,17 @@ export async function uploadBufferToGithub(
   originalFileName: string,
   mimeType: string
 ): Promise<string> {
+  const result = await uploadBufferToGithubWithMeta(buf, layout, contentId, originalFileName, mimeType);
+  return result.path;
+}
+
+export async function uploadBufferToGithubWithMeta(
+  buf: Buffer,
+  layout: UploadLayout,
+  contentId: string,
+  originalFileName: string,
+  mimeType: string
+): Promise<GithubUploadResult> {
   const config = await getGithubConfig();
   const { user, repo, token } = config;
   if (!user || !repo || !token) {
@@ -242,7 +258,7 @@ export async function uploadBufferToGithub(
     });
 
     if (response.ok) {
-      return relative;
+      return { path: relative, checksum: hash };
     }
 
     const err = (await response.json().catch(() => ({}))) as { message?: string };

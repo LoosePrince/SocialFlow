@@ -6,15 +6,21 @@ import { ProjectDetailPageSkeleton } from '../components/PageSkeletons';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
 import { GithubCdnImg } from '../components/GithubCdnImg';
 import ProjectMarkdownContent from '../components/ProjectMarkdownContent';
-import { ArrowLeft, Clock, ExternalLink, Pencil } from 'lucide-react';
+import { ArrowLeft, Clock, Pencil } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/I18nContext';
 import { getGithubUrl } from '../github';
 import CommentSection from '../components/CommentSection';
 import CommentText from '../components/CommentText';
+import AttachmentList from '../components/AttachmentList';
 import dayjs from 'dayjs';
 import { toMillis } from '../lib/time';
 import { motion } from 'framer-motion';
+import {
+  legacyFileAssetFromPath,
+  mergeFileAssetsByPath,
+  type FileAsset,
+} from '../lib/files';
 
 const { Title, Text, Paragraph } = Typography;
 const { useBreakpoint } = Grid;
@@ -41,14 +47,16 @@ const ProjectDetail: React.FC = () => {
           profiles?: { displayname?: string; photourl?: string };
           coverurl?: string;
           attachments?: string[];
+          fileattachments?: FileAsset[];
         }>(`/api/projects/${id}`);
         const authorPhoto = data.profiles?.photourl || '';
+        const oldAttachments = (data.attachments as string[] || []).map((path) => legacyFileAssetFromPath(path));
         setProject({
           ...data,
           authorName: data.profiles?.displayname,
           authorPhoto: getGithubUrl(authorPhoto),
           coverUrl: data.coverurl ? getGithubUrl(data.coverurl) : '',
-          attachments: (data.attachments as string[] || []).map(getGithubUrl),
+          attachments: mergeFileAssetsByPath([...(data.fileattachments ?? []), ...oldAttachments]),
         });
       } catch {
         setProject(null);
@@ -155,20 +163,7 @@ const ProjectDetail: React.FC = () => {
           {project.attachments.length > 0 && (
             <div style={{ marginTop: 40 }}>
               <Title level={4}>{t('project.attachments')}</Title>
-              <Flex gap={12} wrap="wrap">
-                {project.attachments.map((url: string, idx: number) => (
-                  <Button 
-                    key={idx} 
-                    type="default" 
-                    icon={<ExternalLink size={14}/>} 
-                    href={url} 
-                    target="_blank"
-                    style={{ borderRadius: token.borderRadius }}
-                  >
-                    {t('project.viewResource')} {idx + 1}
-                  </Button>
-                ))}
-              </Flex>
+              <AttachmentList attachments={project.attachments} />
             </div>
           )}
         </div>

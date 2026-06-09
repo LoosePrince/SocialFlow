@@ -24,6 +24,7 @@ export const useFeeds = (showAll = false) => {
             ...item,
             coverurl,
             images,
+            fileattachments: Array.isArray(item.fileattachments) ? item.fileattachments : [],
             authorName: (item.profiles as { displayname?: string } | undefined)?.displayname,
             authorPhoto: getGithubUrl(authorPhoto),
             createdAt: item.createdat,

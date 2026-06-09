@@ -1,23 +1,31 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { App, Tabs, Form, Input, Upload, Button, Space, Typography, theme, Grid, Switch, Spin, Segmented, Flex, Divider, Modal } from 'antd';
-import type { UploadFile } from 'antd';
+import { App, Tabs, Form, Input, Button, Space, Typography, theme, Grid, Switch, Spin, Segmented, Flex, Divider } from 'antd';
 import type { InputRef } from 'antd';
 import type { TextAreaRef } from 'antd/es/input/TextArea';
-import { ImagePlus, Type, FileText, Send, Projector, Eye } from 'lucide-react';
-import { uploadToGithub, getGithubUrl } from '../github';
+import { Type, FileText, Send, Projector, Eye } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/I18nContext';
 import { apiJson } from '../lib/api';
+import {
+  inferFileKind,
+  isPersistedFileAsset,
+  legacyFileAssetFromPath,
+  mergeFileAssetsByPath,
+  type FileAsset,
+  uploadFileAsset,
+} from '../lib/files';
+import { filesFromClipboard, filesFromDataTransfer } from '../lib/fileInput';
 import PostBodyDisplay from './PostBodyDisplay';
 import ProjectMarkdownContent from './ProjectMarkdownContent';
 import SmartFeedImage from './SmartFeedImage';
 import OwoEmojiPicker from './OwoEmojiPicker';
 import CommentText from './CommentText';
+import AttachmentPicker from './AttachmentPicker';
+import AttachmentList from './AttachmentList';
 
 const { Title, Paragraph, Text } = Typography;
 const { useBreakpoint } = Grid;
 
-type PathFile = UploadFile & { path?: string; localPreview?: string };
 type TextInputRef = InputRef | TextAreaRef;
 
 export type CreatePanelVariant = 'modal' | 'page';
@@ -30,29 +38,12 @@ export interface CreatePanelProps {
   editTarget?: { kind: 'post' | 'project'; id: string };
 }
 
-async function pathsFromUploadList(
-  files: UploadFile[],
-  upload: (f: File) => Promise<string>
-): Promise<string[]> {
-  const paths: string[] = [];
-  for (const f of files) {
-    const pf = f as PathFile;
-    if (f.originFileObj) {
-      paths.push(await upload(f.originFileObj as File));
-      continue;
-    }
-    if (pf.path) {
-      paths.push(pf.path);
-      continue;
-    }
-    throw new Error(`missing path: ${f.name || f.uid}`);
-  }
-  return paths;
+function persistedAttachmentIds(assets: FileAsset[]): string[] {
+  return assets.filter(isPersistedFileAsset).map((asset) => asset.id);
 }
 
-function previewSrcFromUploadFile(file: UploadFile): string | undefined {
-  const pf = file as PathFile;
-  return file.url || file.thumbUrl || pf.localPreview || (pf.path ? getGithubUrl(pf.path) : undefined);
+function imagePathsFromAttachments(assets: FileAsset[], max = 9): string[] {
+  return assets.filter((asset) => asset.kind === 'image').slice(0, max).map((asset) => asset.path);
 }
 
 const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess, editTarget }) => {
@@ -68,11 +59,11 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
   const projectTitleRef = useRef<InputRef | null>(null);
   const projectSummaryRef = useRef<TextAreaRef | null>(null);
   const projectContentRef = useRef<TextAreaRef | null>(null);
-  const [postFileList, setPostFileList] = useState<UploadFile[]>([]);
-  const [projectFileList, setProjectFileList] = useState<UploadFile[]>([]);
-  const [previewImage, setPreviewImage] = useState('');
-  const [previewTitle, setPreviewTitle] = useState('');
-  const localPreviewUrls = useRef(new Set<string>());
+  const [postAttachments, setPostAttachments] = useState<FileAsset[]>([]);
+  const [projectCover, setProjectCover] = useState<FileAsset[]>([]);
+  const [projectAttachments, setProjectAttachments] = useState<FileAsset[]>([]);
+  const [attachmentUploading, setAttachmentUploading] = useState(false);
+  const [composerDragTarget, setComposerDragTarget] = useState<'post' | 'project' | null>(null);
   const [activeTab, setActiveTab] = useState<'post' | 'project'>(
     editTarget?.kind ?? 'post'
   );
@@ -100,58 +91,6 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
   const watchedProjectSummary = Form.useWatch('summary', projectForm) as string | undefined;
   const watchedProjectContent = Form.useWatch('projectContent', projectForm) as string | undefined;
 
-  const postUploadContentId =
-    editTarget?.kind === 'post' ? editTarget.id : postDraftId;
-  const projectUploadContentId =
-    editTarget?.kind === 'project' ? editTarget.id : projectDraftId;
-
-  useEffect(() => {
-    return () => {
-      localPreviewUrls.current.forEach((url) => URL.revokeObjectURL(url));
-      localPreviewUrls.current.clear();
-    };
-  }, []);
-
-  const withLocalPreviews = (files: UploadFile[]) =>
-    files.map((file) => {
-      const pf = file as PathFile;
-      if (!pf.localPreview && file.originFileObj instanceof File) {
-        const localPreview = URL.createObjectURL(file.originFileObj);
-        localPreviewUrls.current.add(localPreview);
-        return { ...file, localPreview, thumbUrl: file.thumbUrl || localPreview } as PathFile;
-      }
-      return file;
-    });
-
-  const revokeLocalPreviews = (files: UploadFile[]) => {
-    files.forEach((file) => {
-      const url = (file as PathFile).localPreview;
-      if (url && localPreviewUrls.current.has(url)) {
-        URL.revokeObjectURL(url);
-        localPreviewUrls.current.delete(url);
-      }
-    });
-  };
-
-  const updatePostFileList = (files: UploadFile[]) => {
-    const nextUids = new Set(files.map((file) => file.uid));
-    revokeLocalPreviews(postFileList.filter((file) => !nextUids.has(file.uid)));
-    setPostFileList(withLocalPreviews(files));
-  };
-
-  const updateProjectFileList = (files: UploadFile[]) => {
-    const nextUids = new Set(files.map((file) => file.uid));
-    revokeLocalPreviews(projectFileList.filter((file) => !nextUids.has(file.uid)));
-    setProjectFileList(withLocalPreviews(files));
-  };
-
-  const handleUploadPreview = async (file: UploadFile) => {
-    const src = previewSrcFromUploadFile(file);
-    if (!src) return;
-    setPreviewImage(src);
-    setPreviewTitle(file.name || src.split('/').pop() || '');
-  };
-
   const insertIntoFormField = (
     form: typeof postForm,
     fieldName: string,
@@ -173,6 +112,121 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
     }, 0);
   };
 
+  const hasFileTransfer = (dataTransfer: DataTransfer | null) =>
+    Array.from(dataTransfer?.items ?? []).some((item) => item.kind === 'file') ||
+    Array.from(dataTransfer?.types ?? []).includes('Files');
+
+  const trimPostImageLimit = (assets: FileAsset[]) => {
+    let imageSeen = 0;
+    return assets.filter((asset) => {
+      if (asset.kind !== 'image') return true;
+      imageSeen += 1;
+      return imageSeen <= 9;
+    });
+  };
+
+  const uploadComposerFiles = async (target: 'post' | 'project', files: File[]) => {
+    if (files.length === 0) return;
+    const current = target === 'post' ? postAttachments : projectAttachments;
+    const remainingPostImages = 9 - current.filter((asset) => asset.kind === 'image').length;
+    let remainingImages = target === 'post' ? Math.max(0, remainingPostImages) : Number.POSITIVE_INFINITY;
+    let skippedImages = 0;
+    const candidates: File[] = [];
+
+    for (const file of files) {
+      if (target === 'post' && inferFileKind(file.name, file.type) === 'image') {
+        if (remainingImages <= 0) {
+          skippedImages += 1;
+          continue;
+        }
+        remainingImages -= 1;
+      }
+      candidates.push(file);
+    }
+
+    if (skippedImages > 0) {
+      message.warning('图片最多 9 张，已跳过多余图片');
+    }
+    if (candidates.length === 0) {
+      message.info('没有可上传的附件');
+      return;
+    }
+
+    setAttachmentUploading(true);
+    const uploaded: FileAsset[] = [];
+    const failed: string[] = [];
+    try {
+      for (const file of candidates) {
+        try {
+          uploaded.push(await uploadFileAsset(file));
+        } catch (error) {
+          failed.push(error instanceof Error ? error.message : `${file.name} 上传失败`);
+        }
+      }
+
+      if (uploaded.length > 0) {
+        if (target === 'post') {
+          setPostAttachments((prev) => trimPostImageLimit(mergeFileAssetsByPath([...prev, ...uploaded])));
+        } else {
+          setProjectAttachments((prev) => mergeFileAssetsByPath([...prev, ...uploaded]));
+        }
+      }
+
+      if (uploaded.length > 0 && failed.length === 0) {
+        message.success(uploaded.length === 1 ? '附件已上传' : `已上传 ${uploaded.length} 个附件`);
+      } else if (uploaded.length > 0) {
+        message.warning(`已上传 ${uploaded.length} 个，${failed.length} 个失败`);
+      } else {
+        message.error(failed[0] || '附件上传失败');
+      }
+    } finally {
+      setAttachmentUploading(false);
+    }
+  };
+
+  const handleComposerPaste = (event: React.ClipboardEvent, target: 'post' | 'project') => {
+    const files = filesFromClipboard(event.clipboardData, 'attachment');
+    if (files.length === 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void uploadComposerFiles(target, files);
+  };
+
+  const handleComposerDrop = (event: React.DragEvent, target: 'post' | 'project') => {
+    const files = filesFromDataTransfer(event.dataTransfer, 'attachment');
+    if (files.length === 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setComposerDragTarget(null);
+    void uploadComposerFiles(target, files);
+  };
+
+  const handleComposerDragEnter = (event: React.DragEvent, target: 'post' | 'project') => {
+    if (!hasFileTransfer(event.dataTransfer)) return;
+    event.preventDefault();
+    setComposerDragTarget(target);
+  };
+
+  const handleComposerDragOver = (event: React.DragEvent, target: 'post' | 'project') => {
+    if (!hasFileTransfer(event.dataTransfer)) return;
+    event.preventDefault();
+    setComposerDragTarget(target);
+  };
+
+  const handleComposerDragLeave = (event: React.DragEvent) => {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+    setComposerDragTarget(null);
+  };
+
+  const composerFileDropStyle = (target: 'post' | 'project'): React.CSSProperties => ({
+    borderRadius: token.borderRadiusLG,
+    outline: composerDragTarget === target ? `2px dashed ${token.colorPrimary}` : 'none',
+    outlineOffset: 6,
+    background: composerDragTarget === target ? token.colorPrimaryBg : undefined,
+    transition: 'background .2s, outline-color .2s',
+  });
+
   useEffect(() => {
     if (!editTarget || !user) {
       setLoadingEdit(false);
@@ -186,25 +240,21 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
           const data = await apiJson<{
             content: string;
             images?: unknown;
+            fileattachments?: FileAsset[];
             isrecommended?: boolean;
           }>(`/api/posts/${editTarget.id}`);
           if (cancelled) return;
           const imgs = Array.isArray(data.images) ? (data.images as string[]) : [];
+          const newAttachments = Array.isArray(data.fileattachments) ? data.fileattachments : [];
           postForm.setFieldsValue({
             content: data.content,
             ...(isAdmin ? { isrecommended: !!data.isrecommended } : {}),
           });
-          setPostFileList(
-            imgs.map(
-              (p, i) =>
-                ({
-                  uid: `exist-p-${i}`,
-                  name: p.split('/').pop() || `img-${i}`,
-                  status: 'done' as const,
-                  url: getGithubUrl(p),
-                  path: p,
-                }) as PathFile
-            )
+          setPostAttachments(
+            mergeFileAssetsByPath([
+              ...newAttachments,
+              ...imgs.map((path) => legacyFileAssetFromPath(path, 'image')),
+            ])
           );
         } else {
           const data = await apiJson<{
@@ -213,36 +263,25 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
             content: string;
             coverurl?: string;
             attachments?: unknown;
+            fileattachments?: FileAsset[];
             isrecommended?: boolean;
           }>(`/api/projects/${editTarget.id}`);
           if (cancelled) return;
           const atts = Array.isArray(data.attachments) ? (data.attachments as string[]) : [];
+          const newAttachments = Array.isArray(data.fileattachments) ? data.fileattachments : [];
           projectForm.setFieldsValue({
             title: data.title,
             summary: data.summary ?? '',
             projectContent: data.content,
             ...(isAdmin ? { isrecommended: !!data.isrecommended } : {}),
           });
-          const list: UploadFile[] = [];
-          if (data.coverurl) {
-            list.push({
-              uid: 'exist-cover',
-              name: data.coverurl.split('/').pop() || 'cover',
-              status: 'done',
-              url: getGithubUrl(data.coverurl),
-              path: data.coverurl,
-            } as PathFile);
-          }
-          atts.forEach((p, i) => {
-            list.push({
-              uid: `exist-a-${i}`,
-              name: p.split('/').pop() || `file-${i}`,
-              status: 'done',
-              url: getGithubUrl(p),
-              path: p,
-            } as PathFile);
-          });
-          setProjectFileList(list);
+          setProjectCover(data.coverurl ? [legacyFileAssetFromPath(data.coverurl, 'image')] : []);
+          setProjectAttachments(
+            mergeFileAssetsByPath([
+              ...newAttachments,
+              ...atts.map((path) => legacyFileAssetFromPath(path)),
+            ])
+          );
         }
       } catch {
         message.error(t('create.loadFailed'));
@@ -259,16 +298,16 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
     if (!user) return;
     setLoading(true);
     try {
-      const filePaths = await pathsFromUploadList(postFileList, (f) =>
-        uploadToGithub(f, { scope: 'post', contentId: postUploadContentId })
-      );
+      const images = imagePathsFromAttachments(postAttachments);
+      const attachmentIds = persistedAttachmentIds(postAttachments);
 
       if (editTarget?.kind === 'post') {
         await apiJson(`/api/posts/${editTarget.id}`, {
           method: 'PATCH',
           body: JSON.stringify({
             content: values.content,
-            images: filePaths,
+            images,
+            attachmentIds,
             ...(isAdmin ? { isrecommended: !!values.isrecommended } : {}),
           }),
         });
@@ -277,9 +316,10 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
         await apiJson('/api/posts', {
           method: 'POST',
           body: JSON.stringify({
-            id: postUploadContentId,
+            id: postDraftId,
             content: values.content,
-            images: filePaths,
+            images,
+            attachmentIds,
             isrecommended: isAdmin ? !!values.isrecommended : false,
           }),
         });
@@ -288,7 +328,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
       }
 
       postForm.resetFields();
-      updatePostFileList([]);
+      setPostAttachments([]);
       onSuccess();
     } catch (error: unknown) {
       message.error(`${t('common.actionFailed')}: ${error instanceof Error ? error.message : String(error)}`);
@@ -306,11 +346,11 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
     if (!user) return;
     setLoading(true);
     try {
-      const filePaths = await pathsFromUploadList(projectFileList, (f) =>
-        uploadToGithub(f, { scope: 'project', contentId: projectUploadContentId })
-      );
-      const coverurl = filePaths[0] ?? '';
-      const attachments = filePaths.slice(1);
+      const coverurl = projectCover[0]?.path ?? '';
+      const attachments = projectAttachments
+        .filter((asset) => !isPersistedFileAsset(asset))
+        .map((asset) => asset.path);
+      const attachmentIds = persistedAttachmentIds(projectAttachments);
 
       if (editTarget?.kind === 'project') {
         await apiJson(`/api/projects/${editTarget.id}`, {
@@ -321,6 +361,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
             content: values.projectContent,
             coverurl,
             attachments,
+            attachmentIds,
             ...(isAdmin ? { isrecommended: !!values.isrecommended } : {}),
           }),
         });
@@ -329,12 +370,13 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
         await apiJson('/api/projects', {
           method: 'POST',
           body: JSON.stringify({
-            id: projectUploadContentId,
+            id: projectDraftId,
             title: values.title,
             summary: values.summary,
             content: values.projectContent,
             coverurl,
             attachments,
+            attachmentIds,
             isrecommended: isAdmin ? !!values.isrecommended : false,
           }),
         });
@@ -343,7 +385,8 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
       }
 
       projectForm.resetFields();
-      updateProjectFileList([]);
+      setProjectCover([]);
+      setProjectAttachments([]);
       onSuccess();
     } catch (error: unknown) {
       message.error(`${t('common.actionFailed')}: ${error instanceof Error ? error.message : String(error)}`);
@@ -368,8 +411,12 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
         if (tabLocked) return;
         const k = key as 'post' | 'project';
         setActiveTab(k);
-        if (k === 'post') updateProjectFileList([]);
-        else updatePostFileList([]);
+        if (k === 'post') {
+          setProjectCover([]);
+          setProjectAttachments([]);
+        } else {
+          setPostAttachments([]);
+        }
       }}
       destroyOnHidden={false}
       className={isPageMobile ? 'create-page-tabs' : undefined}
@@ -390,6 +437,12 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
               onFinishFailed={onFinishFailed}
               layout="vertical"
               requiredMark={false}
+              onPaste={(event) => handleComposerPaste(event, 'post')}
+              onDrop={(event) => handleComposerDrop(event, 'post')}
+              onDragEnter={(event) => handleComposerDragEnter(event, 'post')}
+              onDragOver={(event) => handleComposerDragOver(event, 'post')}
+              onDragLeave={handleComposerDragLeave}
+              style={composerFileDropStyle('post')}
             >
               <Flex justify="space-between" align="center" style={{ marginBottom: 10 }} wrap="wrap" gap={8}>
                 <Segmented
@@ -463,7 +516,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                   ) : (
                     <Text type="secondary">{t('create.noPostPreview')}</Text>
                   )}
-                  {postFileList.length > 0 && (
+                  {imagePathsFromAttachments(postAttachments).length > 0 && (
                     <div
                       style={{
                         display: 'grid',
@@ -473,12 +526,10 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                         maxWidth: 400,
                       }}
                     >
-                      {postFileList.map((f) => {
-                        const src = previewSrcFromUploadFile(f);
-                        if (!src) return null;
+                      {imagePathsFromAttachments(postAttachments).map((src, index) => {
                         return (
                           <div
-                            key={f.uid}
+                            key={src || index}
                             style={{
                               position: 'relative',
                               width: '100%',
@@ -496,27 +547,19 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                       })}
                     </div>
                   )}
+                  <AttachmentList
+                    compact
+                    attachments={postAttachments.filter((asset) => asset.kind !== 'image')}
+                  />
                 </div>
               )}
-              <Form.Item label={t('create.postImages')}>
-                <div className={isPageMobile ? 'create-page-upload-scroll' : undefined}>
-                  <Upload
-                    listType="picture-card"
-                    fileList={postFileList}
-                    onChange={({ fileList: fl }) => updatePostFileList(fl)}
-                    onPreview={handleUploadPreview}
-                    beforeUpload={() => false}
-                    multiple
-                    maxCount={9}
-                  >
-                    {postFileList.length >= 9 ? null : (
-                      <div style={{ padding: isPageMobile ? 4 : undefined }}>
-                        <ImagePlus size={isPageMobile ? 22 : 20} />
-                        <div style={{ marginTop: 6, fontSize: isPageMobile ? 12 : undefined }}>{t('common.upload')}</div>
-                      </div>
-                    )}
-                  </Upload>
-                </div>
+              <Form.Item label={t('create.postAttachments')}>
+                <AttachmentPicker
+                  value={postAttachments}
+                  onChange={setPostAttachments}
+                  maxImages={9}
+                  label={t('create.postAttachmentsHint')}
+                />
               </Form.Item>
               {isAdmin && (
                 <Form.Item
@@ -531,7 +574,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
               <Button
                 type="primary"
                 htmlType="submit"
-                loading={loading}
+                loading={loading || attachmentUploading}
                 block
                 size="large"
                 icon={<Send size={18} />}
@@ -557,6 +600,12 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
               onFinishFailed={onFinishFailed}
               layout="vertical"
               requiredMark={false}
+              onPaste={(event) => handleComposerPaste(event, 'project')}
+              onDrop={(event) => handleComposerDrop(event, 'project')}
+              onDragEnter={(event) => handleComposerDragEnter(event, 'project')}
+              onDragOver={(event) => handleComposerDragOver(event, 'project')}
+              onDragLeave={handleComposerDragLeave}
+              style={composerFileDropStyle('project')}
             >
               <Flex justify="space-between" align="center" style={{ marginBottom: 10 }} wrap="wrap" gap={8}>
                 <Segmented
@@ -677,25 +726,22 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
                   )}
                 </div>
               )}
-              <Form.Item label={t('create.resources')}>
-                <Upload
-                  listType="picture"
-                  fileList={projectFileList}
-                  onChange={({ fileList: fl }) => updateProjectFileList(fl)}
-                  onPreview={handleUploadPreview}
-                  beforeUpload={() => false}
-                  multiple
-                  className={isPageMobile ? 'create-page-project-upload' : undefined}
-                >
-                  <Button
-                    icon={<ImagePlus size={16} />}
-                    block={isPageMobile}
-                    size="large"
-                    style={isPageMobile ? { height: 44 } : undefined}
-                  >
-                    {t('create.uploadResources')}
-                  </Button>
-                </Upload>
+              <Form.Item label={t('create.projectCover')}>
+                <AttachmentPicker
+                  value={projectCover}
+                  onChange={setProjectCover}
+                  label={t('create.projectCoverHint')}
+                  accept="image/*"
+                  kindFilter="image"
+                  single
+                />
+              </Form.Item>
+              <Form.Item label={t('create.projectAttachments')}>
+                <AttachmentPicker
+                  value={projectAttachments}
+                  onChange={setProjectAttachments}
+                  label={t('create.projectAttachmentsHint')}
+                />
               </Form.Item>
               {isAdmin && (
                 <Form.Item
@@ -710,7 +756,7 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
               <Button
                 type="primary"
                 htmlType="submit"
-                loading={loading}
+                loading={loading || attachmentUploading}
                 block
                 size="large"
                 icon={<Projector size={18} />}
@@ -746,34 +792,12 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
       )}
     </div>
   );
-  const uploadPreviewModal = (
-    <Modal
-      open={!!previewImage}
-      title={previewTitle}
-      footer={null}
-      onCancel={() => setPreviewImage('')}
-      destroyOnHidden
-    >
-      <img alt={previewTitle} style={{ width: '100%' }} src={previewImage} />
-    </Modal>
-  );
-
   if (variant === 'modal') {
-    return (
-      <>
-        {tabsWithLoadingOverlay}
-        {uploadPreviewModal}
-      </>
-    );
+    return <>{tabsWithLoadingOverlay}</>;
   }
 
   if (isPageMobile) {
-    return (
-      <>
-        <div style={{ paddingTop: 0 }}>{tabsWithLoadingOverlay}</div>
-        {uploadPreviewModal}
-      </>
-    );
+    return <div style={{ paddingTop: 0 }}>{tabsWithLoadingOverlay}</div>;
   }
 
   const pageTitle = editTarget
@@ -806,7 +830,6 @@ const CreatePanel: React.FC<CreatePanelProps> = ({ variant = 'modal', onSuccess,
       >
         {tabsWithLoadingOverlay}
       </div>
-      {uploadPreviewModal}
     </>
   );
 };

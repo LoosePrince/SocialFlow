@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
+import type postgres from 'postgres';
 import { cors } from 'hono/cors';
 import { stream } from 'hono/streaming';
 import { closeDatabaseConnections, databaseMaxConnections, sql, listenSql } from './db.js';
@@ -15,7 +16,7 @@ import {
   type AuthUser,
 } from './auth.js';
 import { broadcastSse, registerSseClient } from './sse.js';
-import { deleteFilesFromGithub, uploadBufferToGithub } from './githubUpload.js';
+import { deleteFilesFromGithub, uploadBufferToGithub, uploadBufferToGithubWithMeta } from './githubUpload.js';
 import { queryQqScanStatus, requestQqLoginCode } from './qqDevToolAuth.js';
 import { issueSupabaseSessionForEmail } from './supabaseIssueSession.js';
 import { hashPassword, validatePasswordStrength, verifyPassword } from './passwordAuth.js';
@@ -87,6 +88,36 @@ type ProjectRow = {
   profiles?: { displayname?: string; photourl?: string } | null;
 };
 
+type FileKind = 'image' | 'audio' | 'video' | 'document' | 'archive' | 'file';
+
+type FileAssetRow = {
+  id: string;
+  ownerid: string;
+  folderid?: string | null;
+  path: string;
+  url?: string | null;
+  name: string;
+  mime: string;
+  size: string | number;
+  ext: string;
+  kind: FileKind | string;
+  checksum: string;
+  createdat: string | number;
+  updatedat: string | number;
+  ownername?: string | null;
+};
+
+type FileFolderRow = {
+  id: string;
+  ownerid: string;
+  parentid?: string | null;
+  name: string;
+  createdat: string | number;
+  updatedat: string | number;
+};
+
+type QuerySql = postgres.Sql | postgres.TransactionSql;
+
 type SiteSettingRow = {
   key: string;
   value: unknown;
@@ -147,6 +178,36 @@ function toAdminProject(row: ProjectRow) {
   };
 }
 
+function toFileAsset(row: FileAssetRow) {
+  return {
+    id: row.id,
+    ownerid: row.ownerid,
+    folderid: row.folderid ?? null,
+    path: row.path,
+    url: row.url ?? '',
+    name: row.name,
+    mime: row.mime || 'application/octet-stream',
+    size: Number(row.size ?? 0),
+    ext: row.ext ?? '',
+    kind: normalizeFileKind(row.kind, row.mime, row.name),
+    checksum: row.checksum ?? '',
+    createdat: Number(row.createdat),
+    updatedat: Number(row.updatedat),
+    ownerName: row.ownername ?? '',
+  };
+}
+
+function toFileFolder(row: FileFolderRow) {
+  return {
+    id: row.id,
+    ownerid: row.ownerid,
+    parentid: row.parentid ?? null,
+    name: row.name,
+    createdat: Number(row.createdat),
+    updatedat: Number(row.updatedat),
+  };
+}
+
 function toSiteSetting(row: SiteSettingRow) {
   return {
     key: row.key,
@@ -170,6 +231,171 @@ function parseOffset(value: string | undefined) {
 
 function normalizeSearch(value: string | undefined) {
   return `%${(value ?? '').trim().replace(/[%_\\]/g, '\\$&')}%`;
+}
+
+function normalizeExtFromName(name: string) {
+  const clean = name.split(/[?#]/)[0] ?? '';
+  const dot = clean.lastIndexOf('.');
+  if (dot < 0) return '';
+  return clean.slice(dot).toLowerCase().replace(/[^.a-z0-9]/g, '').slice(0, 16);
+}
+
+function normalizeFileKind(kind: unknown, mime?: string, name?: string): FileKind {
+  if (kind === 'image' || kind === 'audio' || kind === 'video' || kind === 'document' || kind === 'archive' || kind === 'file') {
+    return kind;
+  }
+  const lowerMime = (mime ?? '').toLowerCase();
+  const ext = normalizeExtFromName(name ?? '');
+  if (lowerMime.startsWith('image/')) return 'image';
+  if (lowerMime.startsWith('audio/')) return 'audio';
+  if (lowerMime.startsWith('video/')) return 'video';
+  if (
+    lowerMime === 'application/pdf' ||
+    lowerMime.startsWith('text/') ||
+    lowerMime.includes('officedocument') ||
+    lowerMime.includes('msword') ||
+    lowerMime.includes('ms-excel') ||
+    lowerMime.includes('ms-powerpoint') ||
+    ['.pdf', '.txt', '.md', '.markdown', '.csv', '.json', '.xml', '.html', '.css', '.js', '.ts', '.tsx', '.jsx', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'].includes(ext)
+  ) {
+    return 'document';
+  }
+  if (
+    lowerMime.includes('zip') ||
+    lowerMime.includes('compressed') ||
+    ['.zip', '.rar', '.7z', '.tar', '.gz', '.tgz', '.bz2', '.xz'].includes(ext)
+  ) {
+    return 'archive';
+  }
+  return 'file';
+}
+
+function cleanFileName(value: unknown, fallback = 'file') {
+  const raw = String(value ?? '').trim();
+  const name = raw.split(/[\\/]/).pop()?.trim() || fallback;
+  return name.replace(/[\u0000-\u001f]/g, '').slice(0, 180) || fallback;
+}
+
+function uniqueIds(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const id = String(value ?? '').trim();
+    if (!UUID_RE.test(id) || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
+async function getActorRole(userId: string) {
+  const rows = await sql`SELECT role FROM profiles WHERE id = ${userId} LIMIT 1`;
+  return (rows[0] as { role?: string } | undefined)?.role ?? 'user';
+}
+
+async function assertFolderWritable(folderId: string | null, ownerId: string, isAdmin: boolean) {
+  if (!folderId) return;
+  if (!UUID_RE.test(folderId)) throw new Error('invalid folderId');
+  const rows = await sql`SELECT ownerid FROM file_folders WHERE id = ${folderId} LIMIT 1`;
+  const folder = rows[0] as { ownerid: string } | undefined;
+  if (!folder) throw new Error('folder not found');
+  if (!isAdmin && folder.ownerid !== ownerId) throw new Error('folder forbidden');
+  if (isAdmin && folder.ownerid !== ownerId) throw new Error('folder owner mismatch');
+}
+
+async function getContentAttachmentAssets(contentType: 'post' | 'project', contentId: string) {
+  const rows =
+    contentType === 'post'
+      ? await sql`
+          SELECT fa.*
+          FROM post_attachments pa
+          JOIN file_assets fa ON fa.id = pa.assetid
+          WHERE pa.postid = ${contentId}
+          ORDER BY pa.sortorder ASC, pa.createdat ASC
+        `
+      : await sql`
+          SELECT fa.*
+          FROM project_attachments pa
+          JOIN file_assets fa ON fa.id = pa.assetid
+          WHERE pa.projectid = ${contentId}
+          ORDER BY pa.sortorder ASC, pa.createdat ASC
+        `;
+  return (rows as unknown as FileAssetRow[]).map(toFileAsset);
+}
+
+async function validateContentAttachmentIds(db: QuerySql, assetIdsInput: unknown, actorId: string, isAdmin: boolean) {
+  const assetIds = uniqueIds(assetIdsInput);
+  if (assetIds.length > 0) {
+    const assets = (await db`
+      SELECT id::text AS id, ownerid::text AS ownerid
+      FROM file_assets
+      WHERE id = ANY(${db.array(assetIds)}::uuid[])
+    `) as unknown as Array<{ id: string; ownerid: string }>;
+    const found = new Set(assets.map((asset) => asset.id));
+    if (assetIds.some((id) => !found.has(id))) {
+      throw new Error('attachment not found');
+    }
+    if (!isAdmin && assets.some((asset) => asset.ownerid !== actorId)) {
+      throw new Error('attachment forbidden');
+    }
+  }
+  return assetIds;
+}
+
+async function writeContentAttachments(
+  db: QuerySql,
+  contentType: 'post' | 'project',
+  contentId: string,
+  assetIds: string[]
+) {
+  if (contentType === 'post') {
+    await db`DELETE FROM post_attachments WHERE postid = ${contentId}`;
+    for (let i = 0; i < assetIds.length; i++) {
+      await db`
+        INSERT INTO post_attachments (postid, assetid, sortorder, createdat)
+        VALUES (${contentId}, ${assetIds[i]}, ${i}, ${Date.now()})
+        ON CONFLICT (postid, assetid) DO UPDATE SET sortorder = EXCLUDED.sortorder
+      `;
+    }
+    return;
+  }
+
+  await db`DELETE FROM project_attachments WHERE projectid = ${contentId}`;
+  for (let i = 0; i < assetIds.length; i++) {
+    await db`
+      INSERT INTO project_attachments (projectid, assetid, sortorder, createdat)
+      VALUES (${contentId}, ${assetIds[i]}, ${i}, ${Date.now()})
+      ON CONFLICT (projectid, assetid) DO UPDATE SET sortorder = EXCLUDED.sortorder
+    `;
+  }
+}
+
+async function syncContentAttachments(
+  contentType: 'post' | 'project',
+  contentId: string,
+  assetIdsInput: unknown,
+  actorId: string,
+  isAdmin: boolean
+) {
+  const assetIds = await validateContentAttachmentIds(sql, assetIdsInput, actorId, isAdmin);
+  await sql.begin((tx) => writeContentAttachments(tx, contentType, contentId, assetIds));
+}
+
+async function attachmentPathsForContent(contentType: 'post' | 'project', contentId: string) {
+  const rows =
+    contentType === 'post'
+      ? await sql`
+          SELECT fa.path FROM post_attachments pa
+          JOIN file_assets fa ON fa.id = pa.assetid
+          WHERE pa.postid = ${contentId}
+        `
+      : await sql`
+          SELECT fa.path FROM project_attachments pa
+          JOIN file_assets fa ON fa.id = pa.assetid
+          WHERE pa.projectid = ${contentId}
+        `;
+  return (rows as unknown as Array<{ path?: string }>).map((row) => row.path ?? '').filter(Boolean);
 }
 
 async function getProfileRole(userId: string): Promise<string | undefined> {
@@ -1069,9 +1295,9 @@ app.get('/api/feeds', async (c) => {
     `,
   ]);
 
-  const all = [
-    ...(posts as Record<string, unknown>[]).map((p) => ({ ...p, type: 'post' })),
-    ...(projects as Record<string, unknown>[]).map((p) => ({ ...p, type: 'project' })),
+  const all: Array<Record<string, unknown> & { type: 'post' | 'project'; fileattachments?: unknown }> = [
+    ...(posts as Record<string, unknown>[]).map((p) => ({ ...p, type: 'post' as const })),
+    ...(projects as Record<string, unknown>[]).map((p) => ({ ...p, type: 'project' as const })),
   ]
     .filter((item: Record<string, unknown>) =>
       showAll ? true : item.isrecommended === true
@@ -1080,6 +1306,11 @@ app.get('/api/feeds', async (c) => {
       (a: Record<string, unknown>, b: Record<string, unknown>) =>
         Number(b.createdat) - Number(a.createdat)
     );
+
+  for (const item of all) {
+    const contentType = item.type === 'project' ? 'project' : 'post';
+    item.fileattachments = await getContentAttachmentAssets(contentType, String(item.id ?? ''));
+  }
 
   return c.json(all);
 });
@@ -1097,7 +1328,10 @@ app.get('/api/posts/:id', async (c) => {
     LIMIT 1
   `;
   if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json(row);
+  return c.json({
+    ...(row as Record<string, unknown>),
+    fileattachments: await getContentAttachmentAssets('post', id),
+  });
 });
 
 app.get('/api/projects/:id', async (c) => {
@@ -1112,7 +1346,10 @@ app.get('/api/projects/:id', async (c) => {
     LIMIT 1
   `;
   if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json(row);
+  return c.json({
+    ...(row as Record<string, unknown>),
+    fileattachments: await getContentAttachmentAssets('project', id),
+  });
 });
 
 // ---------- users ----------
@@ -1151,6 +1388,166 @@ app.patch('/api/profile', authMiddleware, async (c) => {
   return c.json(toPublicProfile(row as ProfileRow));
 });
 
+// ---------- file library ----------
+app.get('/api/files/folders', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const isAdmin = (await getActorRole(user.sub)) === 'admin';
+  const showAll = isAdmin && (c.req.query('all') === 'true' || c.req.query('all') === '1');
+  const rows = showAll
+    ? await sql`SELECT * FROM file_folders ORDER BY createdat ASC`
+    : await sql`SELECT * FROM file_folders WHERE ownerid = ${user.sub} ORDER BY createdat ASC`;
+  return c.json((rows as unknown as FileFolderRow[]).map(toFileFolder));
+});
+
+app.post('/api/files/folders', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json<{ name?: string; parentid?: string | null }>();
+  const name = cleanFileName(body.name, '新建文件夹');
+  const parentid = body.parentid ? String(body.parentid).trim() : null;
+  const isAdmin = (await getActorRole(user.sub)) === 'admin';
+  try {
+    await assertFolderWritable(parentid, user.sub, isAdmin);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'folder invalid';
+    return c.json({ error: msg }, msg.includes('forbidden') ? 403 : 400);
+  }
+  const now = Date.now();
+  const [row] = await sql`
+    INSERT INTO file_folders (id, ownerid, parentid, name, createdat, updatedat)
+    VALUES (${crypto.randomUUID()}, ${user.sub}, ${parentid}, ${name}, ${now}, ${now})
+    RETURNING *
+  `;
+  return c.json(toFileFolder(row as FileFolderRow));
+});
+
+app.patch('/api/files/folders/:id', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const id = c.req.param('id');
+  if (!UUID_RE.test(id)) return c.json({ error: 'invalid id' }, 400);
+  const body = await c.req.json<{ name?: string; parentid?: string | null }>();
+  const folderRows = await sql`SELECT * FROM file_folders WHERE id = ${id} LIMIT 1`;
+  const folder = folderRows[0] as FileFolderRow | undefined;
+  if (!folder) return c.json({ error: 'Not found' }, 404);
+  const isAdmin = (await getActorRole(user.sub)) === 'admin';
+  if (!isAdmin && folder.ownerid !== user.sub) return c.json({ error: 'Forbidden' }, 403);
+
+  const nextName = body.name !== undefined ? cleanFileName(body.name, folder.name) : folder.name;
+  const nextParent = body.parentid !== undefined ? (body.parentid ? String(body.parentid).trim() : null) : folder.parentid ?? null;
+  if (nextParent === id) return c.json({ error: 'folder cannot be its own parent' }, 400);
+  try {
+    await assertFolderWritable(nextParent, folder.ownerid, isAdmin);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'folder invalid';
+    return c.json({ error: msg }, msg.includes('forbidden') ? 403 : 400);
+  }
+
+  const [row] = await sql`
+    UPDATE file_folders
+    SET name = ${nextName}, parentid = ${nextParent}, updatedat = ${Date.now()}
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  return c.json(toFileFolder(row as FileFolderRow));
+});
+
+app.delete('/api/files/folders/:id', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const id = c.req.param('id');
+  if (!UUID_RE.test(id)) return c.json({ error: 'invalid id' }, 400);
+  const folderRows = await sql`SELECT ownerid FROM file_folders WHERE id = ${id} LIMIT 1`;
+  const folder = folderRows[0] as { ownerid: string } | undefined;
+  if (!folder) return c.json({ error: 'Not found' }, 404);
+  const isAdmin = (await getActorRole(user.sub)) === 'admin';
+  if (!isAdmin && folder.ownerid !== user.sub) return c.json({ error: 'Forbidden' }, 403);
+  await sql`DELETE FROM file_folders WHERE id = ${id}`;
+  return c.json({ ok: true });
+});
+
+app.get('/api/files', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const isAdmin = (await getActorRole(user.sub)) === 'admin';
+  const showAll = isAdmin && (c.req.query('all') === 'true' || c.req.query('all') === '1');
+  const folderId = c.req.query('folderId');
+  const kind = c.req.query('kind');
+  const q = c.req.query('q')?.trim();
+  const limit = parsePositiveInt(c.req.query('limit'), 80, 200);
+  const offset = parseOffset(c.req.query('offset'));
+  const kindFilter = kind && ['image', 'audio', 'video', 'document', 'archive', 'file'].includes(kind) ? kind : '';
+  const search = normalizeSearch(q);
+
+  const rows = showAll
+    ? await sql`
+        SELECT fa.*, pr.displayname AS ownername
+        FROM file_assets fa
+        LEFT JOIN profiles pr ON pr.id = fa.ownerid
+        WHERE (${folderId === undefined ? sql`true` : folderId === '' || folderId === 'root' ? sql`fa.folderid IS NULL` : sql`fa.folderid = ${folderId}`})
+          AND (${kindFilter ? sql`fa.kind = ${kindFilter}` : sql`true`})
+          AND (${q ? sql`(fa.name ILIKE ${search} OR fa.path ILIKE ${search} OR fa.mime ILIKE ${search})` : sql`true`})
+        ORDER BY fa.createdat DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `
+    : await sql`
+        SELECT fa.*, pr.displayname AS ownername
+        FROM file_assets fa
+        LEFT JOIN profiles pr ON pr.id = fa.ownerid
+        WHERE fa.ownerid = ${user.sub}
+          AND (${folderId === undefined ? sql`true` : folderId === '' || folderId === 'root' ? sql`fa.folderid IS NULL` : sql`fa.folderid = ${folderId}`})
+          AND (${kindFilter ? sql`fa.kind = ${kindFilter}` : sql`true`})
+          AND (${q ? sql`(fa.name ILIKE ${search} OR fa.path ILIKE ${search} OR fa.mime ILIKE ${search})` : sql`true`})
+        ORDER BY fa.createdat DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+  return c.json((rows as unknown as FileAssetRow[]).map(toFileAsset));
+});
+
+app.patch('/api/files/:id', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const id = c.req.param('id');
+  if (!UUID_RE.test(id)) return c.json({ error: 'invalid id' }, 400);
+  const body = await c.req.json<{ name?: string; folderid?: string | null }>();
+  const assetRows = await sql`SELECT * FROM file_assets WHERE id = ${id} LIMIT 1`;
+  const asset = assetRows[0] as FileAssetRow | undefined;
+  if (!asset) return c.json({ error: 'Not found' }, 404);
+  const isAdmin = (await getActorRole(user.sub)) === 'admin';
+  if (!isAdmin && asset.ownerid !== user.sub) return c.json({ error: 'Forbidden' }, 403);
+
+  const nextName = body.name !== undefined ? cleanFileName(body.name, asset.name) : asset.name;
+  const nextFolder = body.folderid !== undefined ? (body.folderid ? String(body.folderid).trim() : null) : asset.folderid ?? null;
+  try {
+    await assertFolderWritable(nextFolder, asset.ownerid, isAdmin);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'folder invalid';
+    return c.json({ error: msg }, msg.includes('forbidden') ? 403 : 400);
+  }
+
+  const [row] = await sql`
+    UPDATE file_assets
+    SET name = ${nextName}, folderid = ${nextFolder}, updatedat = ${Date.now()}
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  return c.json(toFileAsset(row as FileAssetRow));
+});
+
+app.delete('/api/files/:id', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const id = c.req.param('id');
+  if (!UUID_RE.test(id)) return c.json({ error: 'invalid id' }, 400);
+  const assetRows = await sql`SELECT * FROM file_assets WHERE id = ${id} LIMIT 1`;
+  const asset = assetRows[0] as FileAssetRow | undefined;
+  if (!asset) return c.json({ error: 'Not found' }, 404);
+  const isAdmin = (await getActorRole(user.sub)) === 'admin';
+  if (!isAdmin && asset.ownerid !== user.sub) return c.json({ error: 'Forbidden' }, 403);
+  try {
+    await deleteFilesFromGithub([asset.path]);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Delete files failed';
+    return c.json({ error: msg }, 500);
+  }
+  await sql`DELETE FROM file_assets WHERE id = ${id}`;
+  return c.json({ ok: true });
+});
+
 // ---------- posts CRUD ----------
 app.post('/api/posts', authMiddleware, async (c) => {
   const user = c.get('user');
@@ -1158,6 +1555,7 @@ app.post('/api/posts', authMiddleware, async (c) => {
     id?: string;
     content: string;
     images?: string[];
+    attachmentIds?: string[];
     isrecommended?: boolean;
   }>();
   if (!body.content) return c.json({ error: 'content required' }, 400);
@@ -1176,20 +1574,34 @@ app.post('/api/posts', authMiddleware, async (c) => {
   const isrecommended = isAdmin && !!body.isrecommended;
   const imageList = body.images ?? [];
 
-  await sql`
-    INSERT INTO posts (id, authorid, createdat, likecount, commentcount, isrecommended, content, images, type)
-    VALUES (
-      ${id},
-      ${user.sub},
-      ${createdat},
-      0,
-      0,
-      ${isrecommended},
-      ${body.content},
-      ${sql.array(imageList)},
-      'post'
-    )
-  `;
+  try {
+    await sql.begin(async (tx) => {
+      const attachmentIds =
+        body.attachmentIds !== undefined
+          ? await validateContentAttachmentIds(tx, body.attachmentIds, user.sub, isAdmin)
+          : [];
+      await tx`
+        INSERT INTO posts (id, authorid, createdat, likecount, commentcount, isrecommended, content, images, type)
+        VALUES (
+          ${id},
+          ${user.sub},
+          ${createdat},
+          0,
+          0,
+          ${isrecommended},
+          ${body.content},
+          ${tx.array(imageList)},
+          'post'
+        )
+      `;
+      if (body.attachmentIds !== undefined) {
+        await writeContentAttachments(tx, 'post', id, attachmentIds);
+      }
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'post create failed';
+    return c.json({ error: msg }, msg.includes('forbidden') ? 403 : msg.includes('attachment') ? 400 : 500);
+  }
   const [row] = await sql`
     SELECT p.*,
       json_build_object('displayname', pr.displayname, 'photourl', pr.photourl) AS profiles
@@ -1198,7 +1610,10 @@ app.post('/api/posts', authMiddleware, async (c) => {
     WHERE p.id = ${id}
     LIMIT 1
   `;
-  return c.json(row);
+  return c.json({
+    ...(row as Record<string, unknown>),
+    fileattachments: await getContentAttachmentAssets('post', id),
+  });
 });
 
 app.patch('/api/posts/:id', authMiddleware, async (c) => {
@@ -1208,6 +1623,7 @@ app.patch('/api/posts/:id', authMiddleware, async (c) => {
   const body = await c.req.json<{
     content?: string;
     images?: string[];
+    attachmentIds?: string[];
     isrecommended?: boolean;
   }>();
 
@@ -1228,8 +1644,9 @@ app.patch('/api/posts/:id', authMiddleware, async (c) => {
 
   const hasContent = body.content !== undefined;
   const hasImages = body.images !== undefined;
+  const hasAttachmentIds = body.attachmentIds !== undefined;
   const hasRec = body.isrecommended !== undefined;
-  if (!hasContent && !hasImages && !hasRec) {
+  if (!hasContent && !hasImages && !hasAttachmentIds && !hasRec) {
     return c.json({ error: 'No fields to update' }, 400);
   }
 
@@ -1241,6 +1658,14 @@ app.patch('/api/posts/:id', authMiddleware, async (c) => {
   }
   if (hasImages) {
     await sql`UPDATE posts SET images = ${sql.array(body.images ?? [])} WHERE id = ${id}`;
+  }
+  if (hasAttachmentIds) {
+    try {
+      await syncContentAttachments('post', id, body.attachmentIds, user.sub, isAdmin);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'attachment invalid';
+      return c.json({ error: msg }, msg.includes('forbidden') ? 403 : 400);
+    }
   }
   if (hasRec && isAdmin) {
     await sql`UPDATE posts SET isrecommended = ${body.isrecommended ?? false} WHERE id = ${id}`;
@@ -1266,7 +1691,10 @@ app.patch('/api/posts/:id', authMiddleware, async (c) => {
     WHERE p.id = ${id}
     LIMIT 1
   `;
-  return c.json(row);
+  return c.json({
+    ...(row as Record<string, unknown>),
+    fileattachments: await getContentAttachmentAssets('post', id),
+  });
 });
 
 app.delete('/api/posts/:id', authMiddleware, async (c) => {
@@ -1284,7 +1712,10 @@ app.delete('/api/posts/:id', authMiddleware, async (c) => {
   }
   if (body.deleteFiles) {
     try {
-      await deleteFilesFromGithub(Array.isArray(post.images) ? post.images : []);
+      await deleteFilesFromGithub([
+        ...(Array.isArray(post.images) ? post.images : []),
+        ...(await attachmentPathsForContent('post', id)),
+      ]);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Delete files failed';
       return c.json({ error: msg }, 500);
@@ -1316,6 +1747,7 @@ app.post('/api/projects', authMiddleware, async (c) => {
     content: string;
     coverurl?: string;
     attachments?: string[];
+    attachmentIds?: string[];
     isrecommended?: boolean;
   }>();
   if (!body.title || !body.content) return c.json({ error: 'title and content required' }, 400);
@@ -1334,23 +1766,37 @@ app.post('/api/projects', authMiddleware, async (c) => {
   const isrecommended = isAdmin && !!body.isrecommended;
   const attachmentList = body.attachments ?? [];
 
-  await sql`
-    INSERT INTO projects (id, authorid, createdat, likecount, commentcount, isrecommended, title, summary, content, coverurl, attachments, type)
-    VALUES (
-      ${id},
-      ${user.sub},
-      ${createdat},
-      0,
-      0,
-      ${isrecommended},
-      ${body.title},
-      ${body.summary ?? ''},
-      ${body.content},
-      ${body.coverurl ?? ''},
-      ${sql.array(attachmentList)},
-      'project'
-    )
-  `;
+  try {
+    await sql.begin(async (tx) => {
+      const attachmentIds =
+        body.attachmentIds !== undefined
+          ? await validateContentAttachmentIds(tx, body.attachmentIds, user.sub, isAdmin)
+          : [];
+      await tx`
+        INSERT INTO projects (id, authorid, createdat, likecount, commentcount, isrecommended, title, summary, content, coverurl, attachments, type)
+        VALUES (
+          ${id},
+          ${user.sub},
+          ${createdat},
+          0,
+          0,
+          ${isrecommended},
+          ${body.title},
+          ${body.summary ?? ''},
+          ${body.content},
+          ${body.coverurl ?? ''},
+          ${tx.array(attachmentList)},
+          'project'
+        )
+      `;
+      if (body.attachmentIds !== undefined) {
+        await writeContentAttachments(tx, 'project', id, attachmentIds);
+      }
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'project create failed';
+    return c.json({ error: msg }, msg.includes('forbidden') ? 403 : msg.includes('attachment') ? 400 : 500);
+  }
   const [row] = await sql`
     SELECT p.*,
       json_build_object('displayname', pr.displayname, 'photourl', pr.photourl) AS profiles
@@ -1359,7 +1805,10 @@ app.post('/api/projects', authMiddleware, async (c) => {
     WHERE p.id = ${id}
     LIMIT 1
   `;
-  return c.json(row);
+  return c.json({
+    ...(row as Record<string, unknown>),
+    fileattachments: await getContentAttachmentAssets('project', id),
+  });
 });
 
 app.patch('/api/projects/:id', authMiddleware, async (c) => {
@@ -1372,6 +1821,7 @@ app.patch('/api/projects/:id', authMiddleware, async (c) => {
     content?: string;
     coverurl?: string;
     attachments?: string[];
+    attachmentIds?: string[];
     isrecommended?: boolean;
   }>();
 
@@ -1395,8 +1845,9 @@ app.patch('/api/projects/:id', authMiddleware, async (c) => {
   const hasContent = body.content !== undefined;
   const hasCover = body.coverurl !== undefined;
   const hasAtt = body.attachments !== undefined;
+  const hasAttachmentIds = body.attachmentIds !== undefined;
   const hasRec = body.isrecommended !== undefined;
-  if (!hasTitle && !hasSummary && !hasContent && !hasCover && !hasAtt && !hasRec) {
+  if (!hasTitle && !hasSummary && !hasContent && !hasCover && !hasAtt && !hasAttachmentIds && !hasRec) {
     return c.json({ error: 'No fields to update' }, 400);
   }
 
@@ -1420,6 +1871,14 @@ app.patch('/api/projects/:id', authMiddleware, async (c) => {
   }
   if (hasAtt) {
     await sql`UPDATE projects SET attachments = ${sql.array(body.attachments ?? [])} WHERE id = ${id}`;
+  }
+  if (hasAttachmentIds) {
+    try {
+      await syncContentAttachments('project', id, body.attachmentIds, user.sub, isAdmin);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'attachment invalid';
+      return c.json({ error: msg }, msg.includes('forbidden') ? 403 : 400);
+    }
   }
   if (hasRec && isAdmin) {
     await sql`UPDATE projects SET isrecommended = ${body.isrecommended ?? false} WHERE id = ${id}`;
@@ -1445,7 +1904,10 @@ app.patch('/api/projects/:id', authMiddleware, async (c) => {
     WHERE p.id = ${id}
     LIMIT 1
   `;
-  return c.json(row);
+  return c.json({
+    ...(row as Record<string, unknown>),
+    fileattachments: await getContentAttachmentAssets('project', id),
+  });
 });
 
 app.delete('/api/projects/:id', authMiddleware, async (c) => {
@@ -1472,6 +1934,7 @@ app.delete('/api/projects/:id', authMiddleware, async (c) => {
       await deleteFilesFromGithub([
         proj.coverurl ?? '',
         ...(Array.isArray(proj.attachments) ? proj.attachments : []),
+        ...(await attachmentPathsForContent('project', id)),
       ]);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Delete files failed';
@@ -1886,14 +2349,101 @@ app.post('/api/uploads', authMiddleware, async (c) => {
 
   const buf = Buffer.from(await file.arrayBuffer());
   try {
-    const relative = await uploadBufferToGithub(
-      buf,
-      scope,
-      contentId,
-      file.name || 'file',
-      file.type || 'application/octet-stream'
-    );
-    return c.json({ path: relative });
+    const mime = file.type || 'application/octet-stream';
+    const name = cleanFileName(file.name || 'file');
+    const result = await uploadBufferToGithubWithMeta(buf, scope, contentId, name, mime);
+    if (scope !== 'profile') {
+      const now = Date.now();
+      const ext = normalizeExtFromName(name || result.path);
+      await sql`
+        INSERT INTO file_assets (id, ownerid, folderid, path, url, name, mime, size, ext, kind, checksum, createdat, updatedat)
+        VALUES (
+          ${crypto.randomUUID()},
+          ${user.sub},
+          NULL,
+          ${result.path},
+          '',
+          ${name},
+          ${mime},
+          ${file.size},
+          ${ext},
+          ${normalizeFileKind(undefined, mime, name)},
+          ${result.checksum},
+          ${now},
+          ${now}
+        )
+        ON CONFLICT (ownerid, path) DO UPDATE SET
+          name = EXCLUDED.name,
+          mime = EXCLUDED.mime,
+          size = EXCLUDED.size,
+          ext = EXCLUDED.ext,
+          kind = EXCLUDED.kind,
+          checksum = EXCLUDED.checksum,
+          updatedat = EXCLUDED.updatedat
+      `;
+    }
+    return c.json({ path: result.path });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Upload failed';
+    return c.json({ error: msg }, 500);
+  }
+});
+
+app.post('/api/files/upload', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const body = await c.req.parseBody();
+  const file = body['file'];
+  const folderIdRaw = body['folderId'] === undefined ? null : String(body['folderId']).trim();
+
+  if (!file || !(file instanceof File)) {
+    return c.json({ error: 'file required' }, 400);
+  }
+
+  const folderid = folderIdRaw && folderIdRaw !== 'root' ? folderIdRaw : null;
+  const isAdmin = (await getActorRole(user.sub)) === 'admin';
+  try {
+    await assertFolderWritable(folderid, user.sub, isAdmin);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'folder invalid';
+    return c.json({ error: msg }, msg.includes('forbidden') ? 403 : 400);
+  }
+
+  const buf = Buffer.from(await file.arrayBuffer());
+  const name = cleanFileName(file.name || 'file');
+  const mime = file.type || 'application/octet-stream';
+  try {
+    const result = await uploadBufferToGithubWithMeta(buf, 'file', user.sub, name, mime);
+    const now = Date.now();
+    const ext = normalizeExtFromName(name || result.path);
+    const [row] = await sql`
+      INSERT INTO file_assets (id, ownerid, folderid, path, url, name, mime, size, ext, kind, checksum, createdat, updatedat)
+      VALUES (
+        ${crypto.randomUUID()},
+        ${user.sub},
+        ${folderid},
+        ${result.path},
+        '',
+        ${name},
+        ${mime},
+        ${file.size},
+        ${ext},
+        ${normalizeFileKind(undefined, mime, name)},
+        ${result.checksum},
+        ${now},
+        ${now}
+      )
+      ON CONFLICT (ownerid, path) DO UPDATE SET
+        folderid = EXCLUDED.folderid,
+        name = EXCLUDED.name,
+        mime = EXCLUDED.mime,
+        size = EXCLUDED.size,
+        ext = EXCLUDED.ext,
+        kind = EXCLUDED.kind,
+        checksum = EXCLUDED.checksum,
+        updatedat = EXCLUDED.updatedat
+      RETURNING *
+    `;
+    return c.json(toFileAsset(row as FileAssetRow));
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Upload failed';
     return c.json({ error: msg }, 500);
