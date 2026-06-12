@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import { App, Button, Form, Input, Typography, Upload } from 'antd';
+import React, { useEffect, useRef, useState } from 'react';
+import { App, Avatar, Button, Form, Input, Typography } from 'antd';
 import { Camera } from 'lucide-react';
-import { GithubCdnAvatar } from './GithubCdnAvatar';
+import AvatarCropModal from './AvatarCropModal';
 import { useI18n } from '../context/I18nContext';
-import { apiJson, apiUrl } from '../lib/api';
+import { apiFetch, parseApiResponse } from '../lib/api';
 import { supabase } from '../supabase';
 import { sanitizeReturnPath } from '../lib/navigation';
 import { useNavigate } from 'react-router-dom';
@@ -28,56 +28,82 @@ const QqRegisterForm: React.FC<QqRegisterFormProps> = ({
   const { message } = App.useApp();
   const { t } = useI18n();
   const navigate = useNavigate();
-  const [form] = Form.useForm<{ displayname: string; photourl: string }>();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [form] = Form.useForm<{ displayname: string }>();
   const [submitting, setSubmitting] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const photourl = Form.useWatch('photourl', form);
+  const [cropOpen, setCropOpen] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
 
-  const onAvatarUpload = async (file: File) => {
-    setUploading(true);
+  useEffect(() => {
+    if (!avatarFile) {
+      setAvatarPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(avatarFile);
+    setAvatarPreviewUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [avatarFile]);
+
+  const openFilePicker = () => {
+    fileInputRef.current?.click();
+  };
+
+  const onFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      message.error(t('qqRegister.avatarImageOnly'));
+      return;
+    }
+    setPendingFile(file);
+    setCropOpen(true);
+  };
+
+  const handleCropConfirm = (file: File) => {
+    setAvatarFile(file);
+    setCropOpen(false);
+    setPendingFile(null);
+  };
+
+  const handleCropCancel = () => {
+    setCropOpen(false);
+    setPendingFile(null);
+  };
+
+  const handleSubmit = async (values: { displayname: string }) => {
+    if (!avatarFile) {
+      message.error(t('qqRegister.avatarRequired'));
+      return;
+    }
+
+    setSubmitting(true);
     try {
       const fd = new FormData();
       fd.append('ticket', ticket);
-      fd.append('file', file);
-      const res = await fetch(apiUrl('/api/qq/register/upload'), {
+      fd.append('displayname', values.displayname.trim());
+      fd.append('file', avatarFile);
+
+      const res = await apiFetch('/api/qq/register', {
         method: 'POST',
         body: fd,
       });
-      const data = (await res.json()) as { path?: string; error?: string };
-      if (!res.ok) {
-        throw new Error(data.error || t('qqRegister.avatarUploadFailed'));
-      }
-      if (!data.path) {
-        throw new Error(t('qqRegister.avatarUploadFailed'));
-      }
-      form.setFieldsValue({ photourl: data.path });
-      message.success(t('qqRegister.avatarUploadSuccess'));
-    } catch (e) {
-      message.error(e instanceof Error ? e.message : t('qqRegister.avatarUploadFailed'));
-    } finally {
-      setUploading(false);
-    }
-    return false;
-  };
+      const data = await parseApiResponse<{
+        access_token?: string;
+        refresh_token?: string;
+      }>(res);
 
-  const handleSubmit = async (values: { displayname: string; photourl: string }) => {
-    setSubmitting(true);
-    try {
-      const session = await apiJson<{
-        access_token: string;
-        refresh_token: string;
-      }>('/api/qq/register', {
-        method: 'POST',
-        body: JSON.stringify({
-          ticket,
-          displayname: values.displayname.trim(),
-          photourl: values.photourl.trim(),
-        }),
-      });
+      if (!data.access_token || !data.refresh_token) {
+        throw new Error(t('qq.tokenInvalid'));
+      }
 
       const { error } = await supabase.auth.setSession({
-        access_token: session.access_token,
-        refresh_token: session.refresh_token,
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
       });
       if (error) {
         throw new Error(error.message || t('qq.sessionSetFailed'));
@@ -99,35 +125,38 @@ const QqRegisterForm: React.FC<QqRegisterFormProps> = ({
         {t('qqRegister.desc', { uin })}
       </Paragraph>
 
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={onFileInputChange}
+      />
+
+      <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 16 }}>
+        <div style={{ position: 'relative' }}>
+          <Avatar src={avatarPreviewUrl || undefined} size={72}>
+            {!avatarPreviewUrl ? '?' : null}
+          </Avatar>
+          <Button
+            htmlType="button"
+            size="small"
+            shape="circle"
+            icon={<Camera size={12} />}
+            disabled={submitting}
+            onClick={openFilePicker}
+            style={{ position: 'absolute', bottom: 0, right: 0 }}
+          />
+        </div>
+        <Text type="secondary">{t('qqRegister.avatarHint')}</Text>
+      </div>
+
       <Form
         form={form}
         layout="vertical"
         requiredMark={false}
-        onFinish={(values) =>
-          void handleSubmit(values as { displayname: string; photourl: string })
-        }
+        onFinish={(values) => void handleSubmit(values as { displayname: string })}
       >
-        <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 16 }}>
-          <div style={{ position: 'relative' }}>
-            <GithubCdnAvatar src={photourl || ''} size={72} />
-            <Upload
-              showUploadList={false}
-              beforeUpload={onAvatarUpload}
-              accept="image/*"
-              disabled={uploading || submitting}
-            >
-              <Button
-                size="small"
-                shape="circle"
-                icon={<Camera size={12} />}
-                loading={uploading}
-                style={{ position: 'absolute', bottom: 0, right: 0 }}
-              />
-            </Upload>
-          </div>
-          <Text type="secondary">{t('qqRegister.avatarHint')}</Text>
-        </div>
-
         <Form.Item
           name="displayname"
           label={t('qqRegister.nickname')}
@@ -139,29 +168,22 @@ const QqRegisterForm: React.FC<QqRegisterFormProps> = ({
           <Input placeholder={t('qqRegister.nicknamePlaceholder')} size="large" />
         </Form.Item>
 
-        <Form.Item
-          name="photourl"
-          hidden
-          rules={[{ required: true, message: t('qqRegister.avatarRequired') }]}
-        >
-          <Input />
-        </Form.Item>
-
         <div style={{ display: 'flex', gap: 8 }}>
-          <Button onClick={onCancel} disabled={submitting || uploading} style={{ flex: 1 }}>
+          <Button htmlType="button" onClick={onCancel} disabled={submitting} style={{ flex: 1 }}>
             {t('common.cancel')}
           </Button>
-          <Button
-            type="primary"
-            htmlType="submit"
-            loading={submitting}
-            disabled={uploading}
-            style={{ flex: 1 }}
-          >
+          <Button type="primary" htmlType="submit" loading={submitting} style={{ flex: 1 }}>
             {t('qqRegister.submit')}
           </Button>
         </div>
       </Form>
+
+      <AvatarCropModal
+        open={cropOpen}
+        file={pendingFile}
+        onConfirm={handleCropConfirm}
+        onCancel={handleCropCancel}
+      />
     </div>
   );
 };

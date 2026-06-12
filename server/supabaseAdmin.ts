@@ -22,7 +22,7 @@ export async function createSupabaseUserForQqRegister(input: {
   uin: string;
   email: string;
   displayname: string;
-  photourl: string;
+  photourl?: string;
 }): Promise<{ id: string; email: string }> {
   const admin = await getSupabaseAdmin();
   const { data, error } = await admin.auth.admin.createUser({
@@ -30,7 +30,7 @@ export async function createSupabaseUserForQqRegister(input: {
     email_confirm: true,
     user_metadata: {
       full_name: input.displayname,
-      avatar_url: input.photourl,
+      ...(input.photourl ? { avatar_url: input.photourl } : {}),
       qq_uin: input.uin,
       registration_method: 'qq',
     },
@@ -46,4 +46,12 @@ export async function createSupabaseUserForQqRegister(input: {
   }
 
   return { id: user.id, email: user.email };
+}
+
+export async function deleteSupabaseUser(userId: string): Promise<void> {
+  const admin = await getSupabaseAdmin();
+  const { error } = await admin.auth.admin.deleteUser(userId);
+  if (error) {
+    throw new Error(error.message || 'deleteUser 失败');
+  }
 }

@@ -19,7 +19,7 @@ import { broadcastSse, registerSseClient } from './sse.js';
 import { deleteFilesFromGithub, uploadBufferToGithub, uploadBufferToGithubWithMeta } from './githubUpload.js';
 import { queryQqScanStatus, requestQqLoginCode } from './qqDevToolAuth.js';
 import { issueSupabaseSessionForEmail } from './supabaseIssueSession.js';
-import { createSupabaseUserForQqRegister } from './supabaseAdmin.js';
+import { createSupabaseUserForQqRegister, deleteSupabaseUser } from './supabaseAdmin.js';
 import {
   issueQqRegisterTicket,
   qqSyntheticEmail,
@@ -768,63 +768,12 @@ app.get('/api/qq/login/poll', async (c) => {
   }
 });
 
-/** 未登录：QQ 注册流程上传头像（需有效 register ticket） */
-app.post('/api/qq/register/upload', async (c) => {
+/** 未登录：QQ 扫码注册（multipart：ticket + displayname + 头像文件） */
+app.post('/api/qq/register', async (c) => {
   const body = await c.req.parseBody();
   const ticket = String(body['ticket'] ?? '').trim();
+  const displayname = normalizeDisplayName(String(body['displayname'] ?? ''));
   const file = body['file'];
-
-  if (!ticket) {
-    return c.json({ error: '缺少 ticket' }, 400);
-  }
-  if (!file || !(file instanceof File)) {
-    return c.json({ error: 'file required' }, 400);
-  }
-  if (!file.type.startsWith('image/')) {
-    return c.json({ error: '仅支持图片' }, 400);
-  }
-
-  let uin: string;
-  try {
-    ({ uin } = await verifyQqRegisterTicket(ticket));
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'ticket invalid';
-    return c.json({ error: msg }, 401);
-  }
-
-  if (!QQ_UIN_RE.test(uin)) {
-    return c.json({ error: '无效的 uin' }, 400);
-  }
-
-  const takenRows = await sql`SELECT id FROM profiles WHERE qq_uin = ${uin} LIMIT 1`;
-  if (takenRows.length > 0) {
-    return c.json({ error: '该 QQ 已注册' }, 409);
-  }
-
-  const buf = Buffer.from(await file.arrayBuffer());
-  try {
-    const mime = file.type || 'application/octet-stream';
-    const name = cleanFileName(file.name || 'avatar.jpg');
-    const result = await uploadBufferToGithubWithMeta(
-      buf,
-      'profile',
-      `qq-pending-${uin}`,
-      name,
-      mime
-    );
-    return c.json({ path: result.path });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'Upload failed';
-    return c.json({ error: msg }, 500);
-  }
-});
-
-/** 未登录：QQ 扫码注册（需有效 register ticket） */
-app.post('/api/qq/register', async (c) => {
-  const body = await c.req.json<{ ticket?: string; displayname?: string; photourl?: string }>();
-  const ticket = body.ticket?.trim() ?? '';
-  const displayname = normalizeDisplayName(body.displayname);
-  const photourl = body.photourl?.trim() ?? '';
 
   if (!ticket) {
     return c.json({ error: '缺少 ticket' }, 400);
@@ -832,8 +781,11 @@ app.post('/api/qq/register', async (c) => {
   if (!displayname) {
     return c.json({ error: '昵称不能为空且不超过 32 字' }, 400);
   }
-  if (!photourl) {
+  if (!file || !(file instanceof File)) {
     return c.json({ error: '请上传头像' }, 400);
+  }
+  if (!file.type.startsWith('image/')) {
+    return c.json({ error: '仅支持图片' }, 400);
   }
 
   let uin: string;
@@ -860,7 +812,6 @@ app.post('/api/qq/register', async (c) => {
       uin,
       email,
       displayname,
-      photourl,
     });
     userId = created.id;
   } catch (e) {
@@ -872,6 +823,24 @@ app.post('/api/qq/register', async (c) => {
     return c.json({ error: msg }, 502);
   }
 
+  const buf = Buffer.from(await file.arrayBuffer());
+  let photourl: string;
+  try {
+    const mime = file.type || 'image/jpeg';
+    const name = cleanFileName(file.name || 'avatar.jpg');
+    const result = await uploadBufferToGithubWithMeta(buf, 'profile', userId, name, mime);
+    photourl = result.path;
+  } catch (e) {
+    try {
+      await deleteSupabaseUser(userId);
+    } catch (rollbackErr) {
+      console.error('[qq/register] rollback deleteUser failed:', rollbackErr);
+    }
+    const msg = e instanceof Error ? e.message : 'avatar upload failed';
+    console.error('[qq/register] upload avatar:', e);
+    return c.json({ error: msg }, 500);
+  }
+
   const role = (await isAdminEmail(email)) ? 'admin' : 'user';
   const createdat = Date.now();
 
@@ -881,6 +850,11 @@ app.post('/api/qq/register', async (c) => {
       VALUES (${userId}, ${email}, ${displayname}, ${photourl}, ${role}, ${createdat}, ${uin})
     `;
   } catch (e) {
+    try {
+      await deleteSupabaseUser(userId);
+    } catch (rollbackErr) {
+      console.error('[qq/register] rollback deleteUser failed:', rollbackErr);
+    }
     const msg = e instanceof Error ? e.message : 'profile insert failed';
     console.error('[qq/register] insert profile:', e);
     if (msg.includes('unique') || msg.includes('duplicate')) {

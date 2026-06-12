@@ -152,13 +152,25 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   return res;
 }
 
+/** 读取 API 响应体；非 JSON 时抛出可读错误，避免 SyntaxError 直接暴露给用户 */
+export async function parseApiResponse<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  let data: T;
+  try {
+    data = (text ? JSON.parse(text) : {}) as T;
+  } catch {
+    throw new Error(text.trim() || res.statusText || 'Invalid response');
+  }
+  if (!res.ok) {
+    const err = data as { error?: string; msg?: string };
+    throw new Error(err.error || err.msg || res.statusText || String(res.status));
+  }
+  return data;
+}
+
 async function apiJsonFromNetwork<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await apiFetch(path, init);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { error?: string };
-    throw new Error(err.error || res.statusText || String(res.status));
-  }
-  return res.json() as Promise<T>;
+  return parseApiResponse<T>(res);
 }
 
 export async function apiJson<T>(path: string, init: ApiJsonInit = {}): Promise<T> {
