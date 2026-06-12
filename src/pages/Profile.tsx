@@ -22,20 +22,21 @@ const Profile: React.FC = () => {
   const navigate = useNavigate();
   const { user: currentUser, profile: currentProfile, loading: authLoading } = useAuth();
   const { users } = useUsers();
-  const { feeds, loading: feedsLoading } = useFeeds(true);
+
+  const targetUid = uid ?? currentProfile?.id ?? currentUser?.id;
+  const isOwnProfile = Boolean(targetUid && (targetUid === currentProfile?.id || targetUid === currentUser?.id));
+
+  const { feeds: userFeeds, loading: feedsLoading } = useFeeds({
+    showAll: true,
+    authorId: targetUid,
+    enabled: Boolean(targetUid),
+  });
   const { token } = theme.useToken();
   const screens = useBreakpoint();
   const { t } = useI18n();
   const [feedFilter, setFeedFilter] = useState<FeedFilterValue>('all');
 
-  const targetUid = uid || currentUser?.id;
-  const isOwnProfile = targetUid === currentUser?.id;
-  
   const displayProfile = isOwnProfile ? currentProfile : users.find(u => u.uid === targetUid);
-  const userFeeds = useMemo(
-    () => feeds.filter((item) => item.authorid === targetUid),
-    [feeds, targetUid]
-  );
   const visibleFeeds = useMemo(() => {
     if (feedFilter === 'all') return userFeeds;
     return userFeeds.filter((item) => item.type === feedFilter);

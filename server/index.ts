@@ -1429,6 +1429,10 @@ app.delete('/api/admin/settings/:key', authMiddleware, adminMiddleware, async (c
 // ---------- feeds ----------
 app.get('/api/feeds', async (c) => {
   const showAll = c.req.query('showAll') === 'true' || c.req.query('showAll') === '1';
+  const authorId = c.req.query('authorId')?.trim() ?? '';
+  if (authorId && !UUID_RE.test(authorId)) {
+    return c.json({ error: 'invalid authorId' }, 400);
+  }
   const [posts, projects] = await Promise.all([
     sql`
       SELECT p.*,
@@ -1458,6 +1462,9 @@ app.get('/api/feeds', async (c) => {
   ]
     .filter((item: Record<string, unknown>) =>
       showAll ? true : item.isrecommended === true
+    )
+    .filter((item: Record<string, unknown>) =>
+      !authorId || String(item.authorid ?? '') === authorId
     )
     .sort(
       (a: Record<string, unknown>, b: Record<string, unknown>) =>
