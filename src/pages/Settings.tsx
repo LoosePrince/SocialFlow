@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Typography, Card, Switch, List, Button, Input, Form, Divider, App, Upload, Modal, Select } from 'antd';
-import { QqOutlined } from '@ant-design/icons';
+import { QqOutlined, GithubOutlined } from '@ant-design/icons';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
 import NotificationSettingsModal from '../components/NotificationSettingsModal';
 import QqQrModal from '../components/QqQrModal';
@@ -14,6 +14,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useI18n } from '../context/I18nContext';
 import { uploadToGithub } from '../github';
 import { apiJson } from '../lib/api';
+import { supabase } from '../supabase';
 import {
   getPermissionState,
   isPushSupported,
@@ -41,11 +42,81 @@ const Settings: React.FC = () => {
   );
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [hasPassword, setHasPassword] = useState<boolean>(false);
+  const [githubBinding, setGithubBinding] = useState(false);
   const { message } = App.useApp();
+
+  const githubLinked = !!user?.identities?.some((identity) => identity.provider === 'github');
+  const githubUsername =
+    (user?.user_metadata?.user_name as string | undefined) ||
+    (user?.user_metadata?.preferred_username as string | undefined) ||
+    '';
+  const canUnbindGithub = githubLinked && !!(profile?.qq_uin || hasPassword);
 
   const onQqBindDone = useCallback(() => {
     void refreshProfile();
   }, [refreshProfile]);
+
+  const handleBindGithub = async () => {
+    setGithubBinding(true);
+    try {
+      const redirectTo = new URL(`${window.location.origin}/settings`);
+      redirectTo.searchParams.set('github', 'linked');
+      const { error } = await supabase.auth.linkIdentity({
+        provider: 'github',
+        options: { redirectTo: redirectTo.toString() },
+      });
+      if (error) {
+        throw new Error(error.message);
+      }
+    } catch (error: unknown) {
+      message.error(error instanceof Error ? error.message : t('settings.githubBindFailed'));
+      setGithubBinding(false);
+    }
+  };
+
+  const handleUnbindGithub = () => {
+    Modal.confirm({
+      title: t('settings.githubUnbindConfirmTitle'),
+      content: t('settings.githubUnbindConfirmContent'),
+      okText: t('settings.githubUnbind'),
+      cancelText: t('common.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        const githubIdentity = user?.identities?.find((identity) => identity.provider === 'github');
+        if (!githubIdentity) {
+          message.error(t('settings.githubNotLinked'));
+          return;
+        }
+        if (!canUnbindGithub) {
+          message.error(t('settings.githubUnbindBlocked'));
+          return;
+        }
+        setGithubBinding(true);
+        try {
+          const { error } = await supabase.auth.unlinkIdentity(githubIdentity);
+          if (error) {
+            throw new Error(error.message);
+          }
+          message.success(t('settings.githubUnbindSuccess'));
+          await refreshProfile();
+        } catch (error: unknown) {
+          message.error(error instanceof Error ? error.message : t('settings.githubUnbindFailed'));
+        } finally {
+          setGithubBinding(false);
+        }
+      },
+    });
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('github') === 'linked') {
+      message.success(t('settings.githubBindSuccess'));
+      params.delete('github');
+      const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`;
+      window.history.replaceState({}, '', next);
+    }
+  }, [message, t]);
 
   useEffect(() => {
     if (profile) {
@@ -240,6 +311,42 @@ const Settings: React.FC = () => {
 
       <Title level={4} style={{ marginTop: 32 }}>{t('settings.bindings')}</Title>
       <Card className="sf-card" style={{ marginTop: 12 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, marginBottom: 20 }}>
+          <div style={{ flex: '1 1 200px' }}>
+            <Text strong>GitHub</Text>
+            <br />
+            <Text type="secondary">
+              {githubLinked
+                ? t('settings.githubBound', { username: githubUsername || t('settings.githubAccount') })
+                : t('settings.githubNotBound')}
+            </Text>
+          </div>
+          {githubLinked ? (
+            <Button
+              danger
+              icon={<GithubOutlined />}
+              loading={githubBinding}
+              disabled={!canUnbindGithub}
+              onClick={handleUnbindGithub}
+            >
+              {t('settings.githubUnbind')}
+            </Button>
+          ) : (
+            <Button
+              type="primary"
+              icon={<GithubOutlined />}
+              loading={githubBinding}
+              onClick={() => void handleBindGithub()}
+            >
+              {t('settings.githubBind')}
+            </Button>
+          )}
+        </div>
+        {!githubLinked || canUnbindGithub ? null : (
+          <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+            {t('settings.githubUnbindHint')}
+          </Text>
+        )}
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16 }}>
           <div style={{ flex: '1 1 200px' }}>
             <Text strong>QQ</Text>

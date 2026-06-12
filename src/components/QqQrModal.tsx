@@ -7,16 +7,19 @@ import { supabase } from '../supabase';
 import { useI18n } from '../context/I18nContext';
 import { apiFetch, apiUrl } from '../lib/api';
 import { sanitizeReturnPath } from '../lib/navigation';
+import QqRegisterForm from './QqRegisterForm';
 
 const { Text, Paragraph } = Typography;
 
 const POLL_MS = 2000;
 
-type PollState = 'wait' | 'used' | 'ok' | 'error' | 'no_bind';
+type PollState = 'wait' | 'used' | 'ok' | 'error' | 'no_bind' | 'register';
 
 interface PollBody {
   state: PollState;
   msg?: string;
+  uin?: string;
+  ticket?: string;
   access_token?: string;
   refresh_token?: string;
 }
@@ -42,6 +45,7 @@ const QqQrModal: React.FC<QqQrModalProps> = ({
   const [loadingCode, setLoadingCode] = useState(false);
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [hint, setHint] = useState<string>('');
+  const [registerInfo, setRegisterInfo] = useState<{ uin: string; ticket: string } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollCodeRef = useRef<string | null>(null);
   const modeRef = useRef(mode);
@@ -92,6 +96,18 @@ const QqQrModal: React.FC<QqQrModalProps> = ({
       if (body.state === 'no_bind') {
         setHint(body.msg || t('qq.needBindFirst'));
         clearTimer();
+        return;
+      }
+
+      if (body.state === 'register') {
+        clearTimer();
+        if (!body.uin || !body.ticket) {
+          setHint(t('qqRegister.ticketInvalid'));
+          return;
+        }
+        setRegisterInfo({ uin: body.uin, ticket: body.ticket });
+        setQrUrl(null);
+        setHint('');
         return;
       }
 
@@ -149,6 +165,7 @@ const QqQrModal: React.FC<QqQrModalProps> = ({
     setLoadingCode(true);
     setHint('');
     setQrUrl(null);
+    setRegisterInfo(null);
     pollCodeRef.current = null;
     clearTimer();
     try {
@@ -178,13 +195,18 @@ const QqQrModal: React.FC<QqQrModalProps> = ({
       pollCodeRef.current = null;
       setQrUrl(null);
       setHint('');
+      setRegisterInfo(null);
       return;
     }
     void loadCodeRef.current();
     return () => clearTimer();
   }, [open, mode, clearTimer]);
 
-  const title = mode === 'bind' ? t('qq.bindTitle') : t('qq.loginTitle');
+  const title = registerInfo
+    ? t('qqRegister.title')
+    : mode === 'bind'
+      ? t('qq.bindTitle')
+      : t('qq.loginTitle');
 
   return (
     <Modal
@@ -195,41 +217,56 @@ const QqQrModal: React.FC<QqQrModalProps> = ({
       destroyOnHidden
       width={400}
     >
-      <Paragraph type="secondary" style={{ marginBottom: 12 }}>
-        {mode === 'login'
-          ? t('qq.loginDesc')
-          : t('qq.bindDesc')}
-      </Paragraph>
+      {registerInfo ? (
+        <QqRegisterForm
+          uin={registerInfo.uin}
+          ticket={registerInfo.ticket}
+          returnTo={returnTo}
+          onSuccess={onClose}
+          onCancel={() => {
+            setRegisterInfo(null);
+            void loadCode();
+          }}
+        />
+      ) : (
+        <>
+          <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            {mode === 'login'
+              ? t('qq.loginDesc')
+              : t('qq.bindDesc')}
+          </Paragraph>
 
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minHeight: 220 }}>
-        {loadingCode && <Spin size="large" />}
-        {!loadingCode && qrUrl && (
-          <div
-            role="img"
-            aria-label={t('qq.qrAria')}
-            style={{
-              padding: 12,
-              background: '#ffffff',
-              borderRadius: 8,
-              border: '1px solid rgba(0,0,0,0.06)',
-              lineHeight: 0,
-            }}
-          >
-            <QRCode value={qrUrl} size={200} level="M" fgColor="#000000" bgColor="#ffffff" />
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minHeight: 220 }}>
+            {loadingCode && <Spin size="large" />}
+            {!loadingCode && qrUrl && (
+              <div
+                role="img"
+                aria-label={t('qq.qrAria')}
+                style={{
+                  padding: 12,
+                  background: '#ffffff',
+                  borderRadius: 8,
+                  border: '1px solid rgba(0,0,0,0.06)',
+                  lineHeight: 0,
+                }}
+              >
+                <QRCode value={qrUrl} size={200} level="M" fgColor="#000000" bgColor="#ffffff" />
+              </div>
+            )}
+            {hint ? (
+              <Text type="secondary" style={{ marginTop: 16, textAlign: 'center' }}>
+                {hint}
+              </Text>
+            ) : null}
           </div>
-        )}
-        {hint ? (
-          <Text type="secondary" style={{ marginTop: 16, textAlign: 'center' }}>
-            {hint}
-          </Text>
-        ) : null}
-      </div>
 
-      <Space style={{ marginTop: 20, width: '100%', justifyContent: 'center' }}>
-        <Button icon={<RefreshCw size={16} />} onClick={() => void loadCode()} disabled={loadingCode}>
-          {t('qq.refreshQr')}
-        </Button>
-      </Space>
+          <Space style={{ marginTop: 20, width: '100%', justifyContent: 'center' }}>
+            <Button icon={<RefreshCw size={16} />} onClick={() => void loadCode()} disabled={loadingCode}>
+              {t('qq.refreshQr')}
+            </Button>
+          </Space>
+        </>
+      )}
     </Modal>
   );
 };

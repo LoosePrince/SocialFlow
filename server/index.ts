@@ -19,6 +19,12 @@ import { broadcastSse, registerSseClient } from './sse.js';
 import { deleteFilesFromGithub, uploadBufferToGithub, uploadBufferToGithubWithMeta } from './githubUpload.js';
 import { queryQqScanStatus, requestQqLoginCode } from './qqDevToolAuth.js';
 import { issueSupabaseSessionForEmail } from './supabaseIssueSession.js';
+import { createSupabaseUserForQqRegister } from './supabaseAdmin.js';
+import {
+  issueQqRegisterTicket,
+  qqSyntheticEmail,
+  verifyQqRegisterTicket,
+} from './qqRegisterTicket.js';
 import { hashPassword, validatePasswordStrength, verifyPassword } from './passwordAuth.js';
 import { getPushPublicKey, isPushEnabled, sendWebPush } from './push.js';
 import {
@@ -34,6 +40,13 @@ import {
 const PORT = Number(process.env.PORT) || 8787;
 
 const QQ_UIN_RE = /^\d{5,20}$/;
+const DISPLAY_NAME_MAX = 32;
+
+function normalizeDisplayName(raw: string | undefined): string | null {
+  const name = raw?.trim() ?? '';
+  if (!name || name.length > DISPLAY_NAME_MAX) return null;
+  return name;
+}
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -726,10 +739,17 @@ app.get('/api/qq/login/poll', async (c) => {
   `;
   const prof = profRows[0] as { id: string; email: string } | undefined;
   if (!prof?.email) {
-    return c.json({
-      state: 'no_bind' as const,
-      msg: '该 QQ 尚未绑定本站账号，请先用 GitHub 登录后在设置中绑定 QQ',
-    });
+    try {
+      const ticket = await issueQqRegisterTicket(uin);
+      return c.json({
+        state: 'register' as const,
+        uin,
+        ticket,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'ticket failed';
+      return c.json({ state: 'error' as const, msg }, 502);
+    }
   }
 
   try {
@@ -745,6 +765,143 @@ app.get('/api/qq/login/poll', async (c) => {
     const msg = e instanceof Error ? e.message : 'session failed';
     console.error('[qq/login/poll] issue session:', e);
     return c.json({ state: 'error' as const, msg }, 502);
+  }
+});
+
+/** 未登录：QQ 注册流程上传头像（需有效 register ticket） */
+app.post('/api/qq/register/upload', async (c) => {
+  const body = await c.req.parseBody();
+  const ticket = String(body['ticket'] ?? '').trim();
+  const file = body['file'];
+
+  if (!ticket) {
+    return c.json({ error: '缺少 ticket' }, 400);
+  }
+  if (!file || !(file instanceof File)) {
+    return c.json({ error: 'file required' }, 400);
+  }
+  if (!file.type.startsWith('image/')) {
+    return c.json({ error: '仅支持图片' }, 400);
+  }
+
+  let uin: string;
+  try {
+    ({ uin } = await verifyQqRegisterTicket(ticket));
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'ticket invalid';
+    return c.json({ error: msg }, 401);
+  }
+
+  if (!QQ_UIN_RE.test(uin)) {
+    return c.json({ error: '无效的 uin' }, 400);
+  }
+
+  const takenRows = await sql`SELECT id FROM profiles WHERE qq_uin = ${uin} LIMIT 1`;
+  if (takenRows.length > 0) {
+    return c.json({ error: '该 QQ 已注册' }, 409);
+  }
+
+  const buf = Buffer.from(await file.arrayBuffer());
+  try {
+    const mime = file.type || 'application/octet-stream';
+    const name = cleanFileName(file.name || 'avatar.jpg');
+    const result = await uploadBufferToGithubWithMeta(
+      buf,
+      'profile',
+      `qq-pending-${uin}`,
+      name,
+      mime
+    );
+    return c.json({ path: result.path });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Upload failed';
+    return c.json({ error: msg }, 500);
+  }
+});
+
+/** 未登录：QQ 扫码注册（需有效 register ticket） */
+app.post('/api/qq/register', async (c) => {
+  const body = await c.req.json<{ ticket?: string; displayname?: string; photourl?: string }>();
+  const ticket = body.ticket?.trim() ?? '';
+  const displayname = normalizeDisplayName(body.displayname);
+  const photourl = body.photourl?.trim() ?? '';
+
+  if (!ticket) {
+    return c.json({ error: '缺少 ticket' }, 400);
+  }
+  if (!displayname) {
+    return c.json({ error: '昵称不能为空且不超过 32 字' }, 400);
+  }
+  if (!photourl) {
+    return c.json({ error: '请上传头像' }, 400);
+  }
+
+  let uin: string;
+  try {
+    ({ uin } = await verifyQqRegisterTicket(ticket));
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'ticket invalid';
+    return c.json({ error: msg }, 401);
+  }
+
+  if (!QQ_UIN_RE.test(uin)) {
+    return c.json({ error: '无效的 uin' }, 400);
+  }
+
+  const takenRows = await sql`SELECT id FROM profiles WHERE qq_uin = ${uin} LIMIT 1`;
+  if (takenRows.length > 0) {
+    return c.json({ error: '该 QQ 已注册' }, 409);
+  }
+
+  const email = qqSyntheticEmail(uin);
+  let userId: string;
+  try {
+    const created = await createSupabaseUserForQqRegister({
+      uin,
+      email,
+      displayname,
+      photourl,
+    });
+    userId = created.id;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'create user failed';
+    if (msg.toLowerCase().includes('already') || msg.toLowerCase().includes('registered')) {
+      return c.json({ error: '该 QQ 已注册' }, 409);
+    }
+    console.error('[qq/register] createUser:', e);
+    return c.json({ error: msg }, 502);
+  }
+
+  const role = (await isAdminEmail(email)) ? 'admin' : 'user';
+  const createdat = Date.now();
+
+  try {
+    await sql`
+      INSERT INTO profiles (id, email, displayname, photourl, role, createdat, qq_uin)
+      VALUES (${userId}, ${email}, ${displayname}, ${photourl}, ${role}, ${createdat}, ${uin})
+    `;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'profile insert failed';
+    console.error('[qq/register] insert profile:', e);
+    if (msg.includes('unique') || msg.includes('duplicate')) {
+      return c.json({ error: '该 QQ 已注册' }, 409);
+    }
+    return c.json({ error: msg }, 500);
+  }
+
+  try {
+    const session = await issueSupabaseSessionForEmail(email);
+    return c.json({
+      ok: true,
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+      expires_in: session.expires_in,
+      ...(session.expires_at !== undefined ? { expires_at: session.expires_at } : {}),
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'session failed';
+    console.error('[qq/register] issue session:', e);
+    return c.json({ error: msg }, 502);
   }
 });
 
