@@ -42,3 +42,9 @@ Thumbs.db
 
 # Local / scratch
 temp
+
+# Capacitor：由 public/logo.png 经 npm run android:icons 生成，勿入库
+assets/
+
+# Android 启动图标与 splash 位图（npm run android:icons 生成）
+android/app/src/main/res
