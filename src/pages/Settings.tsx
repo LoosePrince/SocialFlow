@@ -6,7 +6,7 @@ import NotificationSettingsModal from '../components/NotificationSettingsModal';
 import QqQrModal from '../components/QqQrModal';
 import PageHeader from '../components/PageHeader';
 import ResponsiveContainer from '../components/ResponsiveContainer';
-import { Moon, Save, LogOut, Camera, Info, KeyRound, Languages, Bell } from 'lucide-react';
+import { Moon, Save, LogOut, Camera, Info, KeyRound, Languages, Bell, FolderOpen, LayoutDashboard } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -26,7 +26,7 @@ const { Title, Text } = Typography;
 
 const Settings: React.FC = () => {
   const navigate = useNavigate();
-  const { user, profile, logout, refreshProfile } = useAuth();
+  const { user, profile, logout, refreshProfile, isAdmin } = useAuth();
   const { mode, toggleTheme } = useTheme();
   const { locale, setLocale, t, availableLocales } = useI18n();
   const [form] = Form.useForm();
@@ -377,6 +377,40 @@ const Settings: React.FC = () => {
         onClose={() => setQqModalOpen(false)}
         onBindComplete={onQqBindDone}
       />
+
+      <Title level={4} style={{ marginTop: 32 }}>{t('settings.manage')}</Title>
+      <Card className="sf-card" style={{ marginTop: 12 }}>
+        <List itemLayout="horizontal">
+          <List.Item
+            extra={
+              <Button type="link" onClick={() => navigate('/files')}>
+                {t('settings.go')}
+              </Button>
+            }
+          >
+            <List.Item.Meta
+              avatar={<FolderOpen size={20} />}
+              title={t('nav.files')}
+              description={t('files.desc')}
+            />
+          </List.Item>
+          {isAdmin ? (
+            <List.Item
+              extra={
+                <Button type="link" onClick={() => navigate('/admin')}>
+                  {t('settings.go')}
+                </Button>
+              }
+            >
+              <List.Item.Meta
+                avatar={<LayoutDashboard size={20} />}
+                title={t('settings.adminTitle')}
+                description={t('settings.adminDesc')}
+              />
+            </List.Item>
+          ) : null}
+        </List>
+      </Card>
       
       <Title level={4} style={{ marginTop: 32 }}>{t('settings.app')}</Title>
       <Card className="sf-card" style={{ marginTop: 12 }}>
