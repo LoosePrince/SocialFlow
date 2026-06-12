@@ -3,23 +3,43 @@ import { Card, Divider, Flex, Grid, Skeleton, theme } from 'antd';
 
 const { useBreakpoint } = Grid;
 
-/** 与详情页中 CommentSection 外包一层 + 评论区根节点一致 */
-function CommentSectionSkeleton() {
+/** 与详情页中 CommentSection 一致 */
+function CommentSectionSkeleton({ embedded = false }: { embedded?: boolean }) {
   const { token } = theme.useToken();
   const screens = useBreakpoint();
+  const inner = (
+    <>
+      <Flex align="center" gap={8} style={{ marginBottom: 20 }}>
+        <Skeleton.Input active size="small" style={{ width: 100, height: 18 }} />
+      </Flex>
+      <Flex gap={12} style={{ marginBottom: 24 }}>
+        <Skeleton.Avatar active size={40} />
+        <div style={{ flex: 1 }}>
+          <Skeleton active paragraph={{ rows: 2 }} title={false} />
+        </div>
+      </Flex>
+      <Skeleton active avatar={{ size: 36 }} paragraph={{ rows: 2 }} title={false} />
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div
+        style={{
+          padding: screens.md ? '20px 0 0' : '16px 16px 0',
+          marginTop: screens.md ? 24 : 0,
+          borderTop: screens.md ? undefined : `1px solid ${token.colorBorderSecondary}`,
+        }}
+      >
+        {inner}
+      </div>
+    );
+  }
+
   return (
     <div style={{ marginTop: 24, padding: screens.md ? 0 : 16 }}>
       <div style={{ background: token.colorBgContainer, borderRadius: token.borderRadiusLG, padding: 20 }}>
-        <Flex align="center" gap={8} style={{ marginBottom: 20 }}>
-          <Skeleton.Input active size="small" style={{ width: 100, height: 18 }} />
-        </Flex>
-        <Flex gap={12} style={{ marginBottom: 24 }}>
-          <Skeleton.Avatar active size={40} />
-          <div style={{ flex: 1 }}>
-            <Skeleton active paragraph={{ rows: 2 }} title={false} />
-          </div>
-        </Flex>
-        <Skeleton active avatar={{ size: 36 }} paragraph={{ rows: 2 }} title={false} />
+        {inner}
       </div>
     </div>
   );
@@ -217,17 +237,31 @@ export function ProfilePageSkeleton() {
 /** 动态详情：返回 + Card（作者行 + 正文 + 图）+ 评论区 */
 export function PostDetailPageSkeleton() {
   const { token } = theme.useToken();
+  const screens = useBreakpoint();
+  const isMobile = !screens.md;
   return (
-    <div style={{ maxWidth: 680, margin: '0 auto' }}>
-      <Skeleton.Button active size="small" style={{ width: 72, height: 32, marginBottom: 16 }} />
+    <div
+      style={{
+        maxWidth: 680,
+        margin: '0 auto',
+        background: isMobile ? token.colorBgContainer : undefined,
+      }}
+    >
+      <Skeleton.Button
+        active
+        size="small"
+        style={{ width: 72, height: 32, marginBottom: 16, marginInline: isMobile ? 16 : 0 }}
+      />
       <Card
         variant="borderless"
         style={{
-          boxShadow: token.boxShadow,
-          borderRadius: token.borderRadiusLG,
-          marginBottom: 24,
+          boxShadow: isMobile ? 'none' : token.boxShadow,
+          borderRadius: isMobile ? 0 : token.borderRadiusLG,
+          background: token.colorBgContainer,
+          border: isMobile ? 'none' : undefined,
+          marginBottom: isMobile ? 0 : 24,
         }}
-        styles={{ body: { padding: 32 } }}
+        styles={{ body: { padding: isMobile ? 16 : 32 } }}
       >
         <Flex align="start" gap={16} style={{ marginBottom: 24 }}>
           <Skeleton.Avatar active size={48} />
@@ -237,17 +271,28 @@ export function PostDetailPageSkeleton() {
           </Flex>
         </Flex>
         <Skeleton active paragraph={{ rows: 5 }} title={false} style={{ marginBottom: 24 }} />
-        <div style={{ width: '100%', overflow: 'hidden', borderRadius: token.borderRadius }}>
-          {/* 与 PostDetail 正文下图一致：整宽矩形，避免 Skeleton.Image 窄条错位 */}
+        <div
+          style={{
+            width: '100%',
+            overflow: 'hidden',
+            margin: isMobile ? '0 -16px' : undefined,
+            borderRadius: isMobile ? 0 : token.borderRadius,
+          }}
+        >
           <Skeleton.Input
             active
             block
             size="large"
-            style={{ width: '100%', height: 220, minHeight: 220, borderRadius: token.borderRadius }}
+            style={{
+              width: '100%',
+              height: 220,
+              minHeight: 220,
+              borderRadius: isMobile ? 0 : token.borderRadius,
+            }}
           />
         </div>
       </Card>
-      <CommentSectionSkeleton />
+      <CommentSectionSkeleton embedded />
     </div>
   );
 }
@@ -256,17 +301,30 @@ export function PostDetailPageSkeleton() {
 export function ProjectDetailPageSkeleton() {
   const { token } = theme.useToken();
   const screens = useBreakpoint();
+  const isMobile = !screens.md;
   return (
-    <div style={{ width: '100%', maxWidth: 800, margin: '0 auto' }}>
-      <Skeleton.Button active size="small" style={{ width: 72, height: 32, marginBottom: 16 }} />
+    <div
+      style={{
+        width: '100%',
+        maxWidth: 800,
+        margin: '0 auto',
+        background: isMobile ? token.colorBgContainer : undefined,
+      }}
+    >
+      <Skeleton.Button
+        active
+        size="small"
+        style={{ width: 72, height: 32, marginBottom: 16, marginInline: isMobile ? 16 : 0 }}
+      />
       <Card
         variant="borderless"
         style={{
           padding: 0,
           overflow: 'hidden',
-          boxShadow: screens.md ? token.boxShadow : 'none',
-          borderRadius: screens.md ? token.borderRadiusLG : 0,
-          background: screens.md ? token.colorBgContainer : 'transparent',
+          boxShadow: isMobile ? 'none' : token.boxShadow,
+          borderRadius: isMobile ? 0 : token.borderRadiusLG,
+          background: token.colorBgContainer,
+          border: isMobile ? 'none' : undefined,
         }}
         styles={{ body: { padding: 0 } }}
       >
@@ -292,7 +350,7 @@ export function ProjectDetailPageSkeleton() {
           <Skeleton active paragraph={{ rows: 12 }} title={false} />
         </div>
       </Card>
-      <CommentSectionSkeleton />
+      <CommentSectionSkeleton embedded />
     </div>
   );
 }

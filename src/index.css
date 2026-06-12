@@ -188,7 +188,6 @@ a, button {
   }
 
   .sf-page-header {
-    padding: 0 16px;
     margin-bottom: 16px;
   }
 
@@ -200,8 +199,8 @@ a, button {
     flex: 1 1 auto;
   }
 
-  .sf-card,
-  .sf-soft-panel {
+  /* 仅首页 Feed 卡片贴边；设置页等表单卡片保留圆角与阴影 */
+  .sf-feed-card.sf-card {
     border-left: none;
     border-right: none;
     border-radius: 0;

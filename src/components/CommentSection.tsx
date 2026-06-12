@@ -28,6 +28,8 @@ function relativeFromNow(v: unknown) {
 interface CommentSectionProps {
   contentId: string;
   contentType: 'post' | 'project';
+  /** 详情页内嵌：无独立卡片背景与外边距 */
+  embedded?: boolean;
 }
 
 type CommentApiItem = {
@@ -47,7 +49,7 @@ function normalizeComments(data: CommentApiItem[]) {
   }));
 }
 
-const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType }) => {
+const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType, embedded = false }) => {
   const { user, profile, isAdmin } = useAuth();
   const { openLoginModal } = useLoginModal();
   const { token } = theme.useToken();
@@ -245,7 +247,21 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType 
   };
 
   return (
-    <div style={{ background: token.colorBgContainer, borderRadius: token.borderRadiusLG, padding: 20 }}>
+    <div
+      style={
+        embedded
+          ? {
+              padding: screens.md ? '20px 0 0' : '16px 16px 0',
+              marginTop: screens.md ? 24 : 0,
+              borderTop: screens.md ? undefined : `1px solid ${token.colorBorderSecondary}`,
+            }
+          : {
+              background: token.colorBgContainer,
+              borderRadius: token.borderRadiusLG,
+              padding: 20,
+            }
+      }
+    >
       <Modal
         title={t('comment.editTitle')}
         open={editCommentId !== null}

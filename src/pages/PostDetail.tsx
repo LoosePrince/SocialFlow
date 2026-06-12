@@ -5,11 +5,12 @@ import { Typography, Button, Card, theme, Flex, Grid } from 'antd';
 import { PostDetailPageSkeleton } from '../components/PageSkeletons';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
 import SmartFeedImage from '../components/SmartFeedImage';
-import { ArrowLeft, Clock, Pencil } from 'lucide-react';
+import { Clock, Pencil } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/I18nContext';
 import { getGithubUrl } from '../github';
 import CommentSection from '../components/CommentSection';
+import DetailPageToolbar from '../components/DetailPageToolbar';
 import PostBodyDisplay from '../components/PostBodyDisplay';
 import AttachmentList from '../components/AttachmentList';
 import dayjs from 'dayjs';
@@ -86,54 +87,43 @@ const PostDetail: React.FC = () => {
   const nonImageAttachments = ((post.fileattachments as FileAsset[] | undefined) ?? []).filter(
     (asset) => asset.kind !== 'image'
   );
+  const isMobile = !screens.md;
 
   return (
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      style={{ maxWidth: 680, margin: '0 auto' }}
+      style={{
+        maxWidth: 680,
+        margin: '0 auto',
+        background: isMobile ? token.colorBgContainer : undefined,
+      }}
     >
-      <Flex
-        justify="space-between"
-        align="center"
-        style={{
-          marginBottom: 16,
-          position: screens.md ? 'static' : 'sticky',
-          top: 64,
-          zIndex: 6,
-          background: token.colorBgLayout,
-          padding: screens.md ? 0 : '8px 0',
-        }}
-        wrap="wrap"
-        gap={8}
-      >
-        <Button
-          type="text"
-          icon={<ArrowLeft size={16} />}
-          onClick={() => navigate(-1)}
-          style={{ color: token.colorTextSecondary }}
-        >
-          {t('detail.back')}
-        </Button>
-        {canEditPost && (
-          <Button
-            color="primary"
-            variant="outlined"
-            icon={<Pencil size={16} strokeWidth={2} />}
-            onClick={() => navigate(`/create?edit=${encodeURIComponent(post.id)}&type=post`)}
-          >
-            {t('detail.edit')}
-          </Button>
-        )}
-      </Flex>
+      <DetailPageToolbar
+        backLabel={t('detail.back')}
+        onBack={() => navigate(-1)}
+        editAction={
+          canEditPost ? (
+            <Button
+              type="text"
+              icon={<Pencil size={16} strokeWidth={2} />}
+              onClick={() => navigate(`/create?edit=${encodeURIComponent(post.id)}&type=post`)}
+              style={{ color: token.colorTextSecondary }}
+            >
+              {t('detail.edit')}
+            </Button>
+          ) : undefined
+        }
+      />
       
-      <Card 
-        className="sf-card"
+      <Card
         variant="borderless"
         style={{ 
           boxShadow: screens.md ? 'var(--sf-subtle-shadow)' : 'none',
           borderRadius: screens.md ? token.borderRadiusLG : 0,
-          marginBottom: 24
+          background: token.colorBgContainer,
+          border: isMobile ? 'none' : undefined,
+          marginBottom: screens.md ? 24 : 0,
         }}
         styles={{ body: { padding: screens.md ? 32 : 16 } }}
       >
@@ -166,15 +156,30 @@ const PostDetail: React.FC = () => {
         </div>
         
         {post.images && post.images.length > 0 && (
-          <Flex vertical gap={12}>
+          <Flex
+            vertical
+            gap={isMobile ? 0 : 12}
+            style={isMobile ? { margin: '0 -16px' } : undefined}
+          >
             {post.images.map((img: string, idx: number) => (
-              <div key={idx} style={{ boxShadow: token.boxShadowSecondary, borderRadius: token.borderRadius, overflow: 'hidden' }}>
+              <div
+                key={idx}
+                style={
+                  isMobile
+                    ? { overflow: 'hidden' }
+                    : {
+                        boxShadow: token.boxShadowSecondary,
+                        borderRadius: token.borderRadius,
+                        overflow: 'hidden',
+                      }
+                }
+              >
                 <SmartFeedImage
                   src={img}
                   alt=""
                   layout="stacked"
                   preview={{}}
-                  style={{ borderRadius: token.borderRadius }}
+                  style={{ borderRadius: isMobile ? 0 : token.borderRadius }}
                 />
               </div>
             ))}
@@ -183,9 +188,7 @@ const PostDetail: React.FC = () => {
         <AttachmentList attachments={nonImageAttachments} />
       </Card>
 
-      <div style={{ marginTop: 24 }}>
-        <CommentSection contentId={post.id} contentType="post" />
-      </div>
+      <CommentSection contentId={post.id} contentType="post" embedded />
     </motion.div>
   );
 };

@@ -6,11 +6,12 @@ import { ProjectDetailPageSkeleton } from '../components/PageSkeletons';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
 import { GithubCdnImg } from '../components/GithubCdnImg';
 import ProjectMarkdownContent from '../components/ProjectMarkdownContent';
-import { ArrowLeft, Clock, Pencil } from 'lucide-react';
+import { Clock, Pencil } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/I18nContext';
 import { getGithubUrl } from '../github';
 import CommentSection from '../components/CommentSection';
+import DetailPageToolbar from '../components/DetailPageToolbar';
 import CommentText from '../components/CommentText';
 import AttachmentList from '../components/AttachmentList';
 import dayjs from 'dayjs';
@@ -90,6 +91,7 @@ const ProjectDetail: React.FC = () => {
   if (!project) return <div style={{ padding: '20px', textAlign: 'center' }}>{t('project.notFound')}</div>;
 
   const projectTimeMs = toMillis(project.createdat);
+  const isMobile = !screens.md;
 
   return (
     <motion.div 
@@ -98,52 +100,36 @@ const ProjectDetail: React.FC = () => {
       style={{ 
         width: '100%',
         maxWidth: 800,
-        margin: '0 auto' 
+        margin: '0 auto',
+        background: isMobile ? token.colorBgContainer : undefined,
       }}
     >
-      <Flex
-        justify="space-between"
-        align="center"
-        style={{
-          marginBottom: 16,
-          position: screens.md ? 'static' : 'sticky',
-          top: 64,
-          zIndex: 6,
-          background: token.colorBgLayout,
-          padding: screens.md ? 0 : '8px 0',
-        }}
-        wrap="wrap"
-        gap={8}
-      >
-        <Button
-          type="text"
-          icon={<ArrowLeft size={16} />}
-          onClick={() => navigate(-1)}
-          style={{ color: token.colorTextSecondary }}
-        >
-          {t('detail.back')}
-        </Button>
-        {canEditProject && (
-          <Button
-            type="text"
-            icon={<Pencil size={16} strokeWidth={2} />}
-            onClick={() => navigate(`/create?edit=${encodeURIComponent(project.id)}&type=project`)}
-            style={{ color: token.colorTextSecondary }}
-          >
-            {t('detail.edit')}
-          </Button>
-        )}
-      </Flex>
+      <DetailPageToolbar
+        backLabel={t('detail.back')}
+        onBack={() => navigate(-1)}
+        editAction={
+          canEditProject ? (
+            <Button
+              type="text"
+              icon={<Pencil size={16} strokeWidth={2} />}
+              onClick={() => navigate(`/create?edit=${encodeURIComponent(project.id)}&type=project`)}
+              style={{ color: token.colorTextSecondary }}
+            >
+              {t('detail.edit')}
+            </Button>
+          ) : undefined
+        }
+      />
       
-      <Card 
-        className="sf-card"
+      <Card
         variant="borderless"
         style={{ 
           padding: 0, 
           overflow: 'hidden',
           boxShadow: screens.md ? 'var(--sf-subtle-shadow)' : 'none',
           borderRadius: screens.md ? token.borderRadiusLG : 0,
-          background: screens.md ? token.colorBgContainer : 'transparent'
+          background: token.colorBgContainer,
+          border: isMobile ? 'none' : undefined,
         }}
         styles={{ body: { padding: 0 } }}
       >
@@ -196,9 +182,7 @@ const ProjectDetail: React.FC = () => {
         </div>
       </Card>
 
-      <div style={{ marginTop: 24, padding: screens.md ? 0 : 16 }}>
-        <CommentSection contentId={project.id} contentType="project" />
-      </div>
+      <CommentSection contentId={project.id} contentType="project" embedded />
     </motion.div>
   );
 };
