@@ -112,7 +112,7 @@ const Home: React.FC = () => {
           onClose={() => setQuickCommentPostId(null)}
           placement="bottom"
           height="78vh"
-          destroyOnClose
+          destroyOnHidden
           styles={{
             body: { padding: 16 },
             content: { borderTopLeftRadius: 16, borderTopRightRadius: 16, overflow: 'hidden' },

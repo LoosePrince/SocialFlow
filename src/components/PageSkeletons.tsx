@@ -23,12 +23,25 @@ function CommentSectionSkeleton({ embedded = false }: { embedded?: boolean }) {
   );
 
   if (embedded) {
+    if (screens.md) {
+      return (
+        <div
+          style={{
+            background: token.colorBgContainer,
+            borderRadius: token.borderRadiusLG,
+            padding: 20,
+            marginTop: 24,
+          }}
+        >
+          {inner}
+        </div>
+      );
+    }
     return (
       <div
         style={{
-          padding: screens.md ? '20px 0 0' : '16px 16px 0',
-          marginTop: screens.md ? 24 : 0,
-          borderTop: screens.md ? undefined : `1px solid ${token.colorBorderSecondary}`,
+          padding: '16px 16px 0',
+          borderTop: `1px solid ${token.colorBorderSecondary}`,
         }}
       >
         {inner}

@@ -28,7 +28,7 @@ function relativeFromNow(v: unknown) {
 interface CommentSectionProps {
   contentId: string;
   contentType: 'post' | 'project';
-  /** 详情页内嵌：无独立卡片背景与外边距 */
+  /** 详情页内嵌：移动端无卡片背景与外边距，桌面端仍保留卡片 */
   embedded?: boolean;
 }
 
@@ -250,11 +250,17 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType,
     <div
       style={
         embedded
-          ? {
-              padding: screens.md ? '20px 0 0' : '16px 16px 0',
-              marginTop: screens.md ? 24 : 0,
-              borderTop: screens.md ? undefined : `1px solid ${token.colorBorderSecondary}`,
-            }
+          ? screens.md
+            ? {
+                background: token.colorBgContainer,
+                borderRadius: token.borderRadiusLG,
+                padding: 20,
+                marginTop: 24,
+              }
+            : {
+                padding: '16px 16px 0',
+                borderTop: `1px solid ${token.colorBorderSecondary}`,
+              }
           : {
               background: token.colorBgContainer,
               borderRadius: token.borderRadiusLG,
@@ -269,7 +275,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType,
         onCancel={() => setEditCommentId(null)}
         confirmLoading={savingCommentEdit}
         okText={t('common.save')}
-        destroyOnClose
+        destroyOnHidden
       >
         <Flex vertical gap={10}>
           <Segmented
