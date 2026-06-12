@@ -22,6 +22,7 @@ import { issueSupabaseSessionForEmail } from './supabaseIssueSession.js';
 import { createSupabaseUserForQqRegister, deleteSupabaseUser } from './supabaseAdmin.js';
 import {
   issueQqRegisterTicket,
+  qqAvatarUrl,
   qqSyntheticEmail,
   verifyQqRegisterTicket,
 } from './qqRegisterTicket.js';
@@ -768,7 +769,7 @@ app.get('/api/qq/login/poll', async (c) => {
   }
 });
 
-/** 未登录：QQ 扫码注册（multipart：ticket + displayname + 头像文件） */
+/** 未登录：QQ 扫码注册（multipart：ticket + displayname；可选 file 自定义头像，否则使用 QQ 官方头像链接） */
 app.post('/api/qq/register', async (c) => {
   const body = await c.req.parseBody();
   const ticket = String(body['ticket'] ?? '').trim();
@@ -781,10 +782,10 @@ app.post('/api/qq/register', async (c) => {
   if (!displayname) {
     return c.json({ error: '昵称不能为空且不超过 32 字' }, 400);
   }
-  if (!file || !(file instanceof File)) {
-    return c.json({ error: '请上传头像' }, 400);
+  if (file !== undefined && file !== null && !(file instanceof File)) {
+    return c.json({ error: '无效的头像文件' }, 400);
   }
-  if (!file.type.startsWith('image/')) {
+  if (file instanceof File && !file.type.startsWith('image/')) {
     return c.json({ error: '仅支持图片' }, 400);
   }
 
@@ -806,39 +807,61 @@ app.post('/api/qq/register', async (c) => {
   }
 
   const email = qqSyntheticEmail(uin);
+  const defaultPhotoUrl = qqAvatarUrl(uin);
   let userId: string;
-  try {
-    const created = await createSupabaseUserForQqRegister({
-      uin,
-      email,
-      displayname,
-    });
-    userId = created.id;
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'create user failed';
-    if (msg.toLowerCase().includes('already') || msg.toLowerCase().includes('registered')) {
-      return c.json({ error: '该 QQ 已注册' }, 409);
-    }
-    console.error('[qq/register] createUser:', e);
-    return c.json({ error: msg }, 502);
-  }
-
-  const buf = Buffer.from(await file.arrayBuffer());
   let photourl: string;
-  try {
-    const mime = file.type || 'image/jpeg';
-    const name = cleanFileName(file.name || 'avatar.jpg');
-    const result = await uploadBufferToGithubWithMeta(buf, 'profile', userId, name, mime);
-    photourl = result.path;
-  } catch (e) {
+
+  if (file instanceof File) {
     try {
-      await deleteSupabaseUser(userId);
-    } catch (rollbackErr) {
-      console.error('[qq/register] rollback deleteUser failed:', rollbackErr);
+      const created = await createSupabaseUserForQqRegister({
+        uin,
+        email,
+        displayname,
+      });
+      userId = created.id;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'create user failed';
+      if (msg.toLowerCase().includes('already') || msg.toLowerCase().includes('registered')) {
+        return c.json({ error: '该 QQ 已注册' }, 409);
+      }
+      console.error('[qq/register] createUser:', e);
+      return c.json({ error: msg }, 502);
     }
-    const msg = e instanceof Error ? e.message : 'avatar upload failed';
-    console.error('[qq/register] upload avatar:', e);
-    return c.json({ error: msg }, 500);
+
+    const buf = Buffer.from(await file.arrayBuffer());
+    try {
+      const mime = file.type || 'image/jpeg';
+      const name = cleanFileName(file.name || 'avatar.jpg');
+      const result = await uploadBufferToGithubWithMeta(buf, 'profile', userId, name, mime);
+      photourl = result.path;
+    } catch (e) {
+      try {
+        await deleteSupabaseUser(userId);
+      } catch (rollbackErr) {
+        console.error('[qq/register] rollback deleteUser failed:', rollbackErr);
+      }
+      const msg = e instanceof Error ? e.message : 'avatar upload failed';
+      console.error('[qq/register] upload avatar:', e);
+      return c.json({ error: msg }, 500);
+    }
+  } else {
+    photourl = defaultPhotoUrl;
+    try {
+      const created = await createSupabaseUserForQqRegister({
+        uin,
+        email,
+        displayname,
+        photourl,
+      });
+      userId = created.id;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'create user failed';
+      if (msg.toLowerCase().includes('already') || msg.toLowerCase().includes('registered')) {
+        return c.json({ error: '该 QQ 已注册' }, 409);
+      }
+      console.error('[qq/register] createUser:', e);
+      return c.json({ error: msg }, 502);
+    }
   }
 
   const role = (await isAdminEmail(email)) ? 'admin' : 'user';

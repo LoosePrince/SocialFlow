@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { App, Avatar, Button, Form, Input, Typography } from 'antd';
 import { Camera } from 'lucide-react';
 import AvatarCropModal from './AvatarCropModal';
 import { useI18n } from '../context/I18nContext';
 import { apiFetch, parseApiResponse } from '../lib/api';
+import { qqAvatarUrl } from '../lib/qqAvatar';
 import { supabase } from '../supabase';
 import { sanitizeReturnPath } from '../lib/navigation';
 import { useNavigate } from 'react-router-dom';
@@ -33,16 +34,21 @@ const QqRegisterForm: React.FC<QqRegisterFormProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [cropOpen, setCropOpen] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  /** 用户自定义裁切头像；为 null 时使用 QQ 官方头像 */
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
-  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
+  const [customPreviewUrl, setCustomPreviewUrl] = useState<string | null>(null);
+
+  const defaultAvatarUrl = useMemo(() => qqAvatarUrl(uin), [uin]);
+  const previewUrl = customPreviewUrl ?? defaultAvatarUrl;
+  const usingCustomAvatar = avatarFile !== null;
 
   useEffect(() => {
     if (!avatarFile) {
-      setAvatarPreviewUrl(null);
+      setCustomPreviewUrl(null);
       return;
     }
     const url = URL.createObjectURL(avatarFile);
-    setAvatarPreviewUrl(url);
+    setCustomPreviewUrl(url);
     return () => {
       URL.revokeObjectURL(url);
     };
@@ -75,18 +81,19 @@ const QqRegisterForm: React.FC<QqRegisterFormProps> = ({
     setPendingFile(null);
   };
 
-  const handleSubmit = async (values: { displayname: string }) => {
-    if (!avatarFile) {
-      message.error(t('qqRegister.avatarRequired'));
-      return;
-    }
+  const resetToQqAvatar = () => {
+    setAvatarFile(null);
+  };
 
+  const handleSubmit = async (values: { displayname: string }) => {
     setSubmitting(true);
     try {
       const fd = new FormData();
       fd.append('ticket', ticket);
       fd.append('displayname', values.displayname.trim());
-      fd.append('file', avatarFile);
+      if (avatarFile) {
+        fd.append('file', avatarFile);
+      }
 
       const res = await apiFetch('/api/qq/register', {
         method: 'POST',
@@ -135,9 +142,7 @@ const QqRegisterForm: React.FC<QqRegisterFormProps> = ({
 
       <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 16 }}>
         <div style={{ position: 'relative' }}>
-          <Avatar src={avatarPreviewUrl || undefined} size={72}>
-            {!avatarPreviewUrl ? '?' : null}
-          </Avatar>
+          <Avatar src={previewUrl} size={72} />
           <Button
             htmlType="button"
             size="small"
@@ -148,7 +153,17 @@ const QqRegisterForm: React.FC<QqRegisterFormProps> = ({
             style={{ position: 'absolute', bottom: 0, right: 0 }}
           />
         </div>
-        <Text type="secondary">{t('qqRegister.avatarHint')}</Text>
+        <div>
+          <Text type="secondary">{t('qqRegister.avatarHint')}</Text>
+          {usingCustomAvatar ? (
+            <>
+              <br />
+              <Button type="link" size="small" style={{ padding: 0 }} onClick={resetToQqAvatar}>
+                {t('qqRegister.useQqAvatar')}
+              </Button>
+            </>
+          ) : null}
+        </div>
       </div>
 
       <Form

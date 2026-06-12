@@ -36,7 +36,12 @@ export async function verifyQqRegisterTicket(token: string): Promise<QqRegisterT
   return { uin };
 }
 
-/** QQ 专属账号在 Supabase 中使用的占位邮箱 */
+/** QQ 账号注册时使用的邮箱（{uin}@qq.com） */
 export function qqSyntheticEmail(uin: string): string {
-  return `qq-${uin}@qq.socialflow.local`;
+  return `${uin}@qq.com`;
+}
+
+/** QQ 官方头像 CDN（nk 为 uin） */
+export function qqAvatarUrl(uin: string): string {
+  return `https://q1.qlogo.cn/g?b=qq&nk=${uin}&s=640`;
 }

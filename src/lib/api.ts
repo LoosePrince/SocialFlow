@@ -76,7 +76,7 @@ function writeCache<T>(cacheKey: string, path: string, data: T) {
   }
 }
 
-function clearApiCache() {
+export function clearApiCache() {
   if (!canUseLocalStorage()) return;
   try {
     const keys: string[] = [];

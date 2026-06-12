@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabase';
-import { User as SupabaseUser } from '@supabase/supabase-js';
-import { apiJson } from '../lib/api';
+import type { Session, User as SupabaseUser } from '@supabase/supabase-js';
+import { apiJson, clearApiCache } from '../lib/api';
 import { sanitizeReturnPath } from '../lib/navigation';
 
 interface UserProfile {
@@ -34,54 +34,80 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  /** 合并 getSession 与 onAuthStateChange 触发的并发 /api/me，减轻 401 + refresh 风暴 */
-  const profileFetchRef = useRef<Promise<void> | null>(null);
+  const activeUserIdRef = useRef<string | null>(null);
+  /** 按 userId 合并并发 /api/me；切换账号时作废旧请求 */
+  const profileFetchRef = useRef<{ userId: string; promise: Promise<void> } | null>(null);
 
-  const fetchProfile = async () => {
-    if (profileFetchRef.current) return profileFetchRef.current;
-    profileFetchRef.current = (async () => {
+  const fetchProfileForUser = async (userId: string, options?: { localFirst?: boolean }) => {
+    const inFlight = profileFetchRef.current;
+    if (inFlight?.userId === userId) {
+      return inFlight.promise;
+    }
+
+    const promise = (async () => {
       try {
-        const p = await apiJson<UserProfile>('/api/me');
+        const p = await apiJson<UserProfile>('/api/me', {
+          localFirst: options?.localFirst ?? false,
+        });
+        if (activeUserIdRef.current !== userId) return;
         setProfile(p);
       } catch (err) {
         console.error('Profile fetch error:', err);
-        setProfile(null);
+        if (activeUserIdRef.current === userId) {
+          setProfile(null);
+        }
       } finally {
-        setLoading(false);
-        profileFetchRef.current = null;
+        if (profileFetchRef.current?.userId === userId) {
+          profileFetchRef.current = null;
+        }
+        if (activeUserIdRef.current === userId) {
+          setLoading(false);
+        }
       }
     })();
-    return profileFetchRef.current;
+
+    profileFetchRef.current = { userId, promise };
+    return promise;
+  };
+
+  const applySession = (session: Session | null, options?: { localFirst?: boolean }) => {
+    const nextUserId = session?.user?.id ?? null;
+    const prevUserId = activeUserIdRef.current;
+
+    if (nextUserId !== prevUserId) {
+      profileFetchRef.current = null;
+      clearApiCache();
+      setProfile(null);
+      activeUserIdRef.current = nextUserId;
+    }
+
+    setUser(session?.user ?? null);
+
+    if (nextUserId) {
+      if (nextUserId !== prevUserId) {
+        setLoading(true);
+      }
+      void fetchProfileForUser(nextUserId, options);
+      return;
+    }
+
+    setLoading(false);
   };
 
   const refreshProfile = async () => {
-    try {
-      const p = await apiJson<UserProfile>('/api/me');
-      setProfile(p);
-    } catch {
-      /* ignore */
-    }
+    const userId = activeUserIdRef.current;
+    if (!userId) return;
+    profileFetchRef.current = null;
+    await fetchProfileForUser(userId, { localFirst: false });
   };
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setUser(session.user);
-        void fetchProfile();
-      } else {
-        setLoading(false);
-      }
+      applySession(session, { localFirst: true });
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) {
-        setUser(session.user);
-        void fetchProfile();
-      } else {
-        setUser(null);
-        setProfile(null);
-        setLoading(false);
-      }
+      applySession(session, { localFirst: false });
     });
 
     return () => {

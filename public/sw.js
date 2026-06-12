@@ -1,6 +1,21 @@
+const SHELL_CACHE = 'socialflow-shell-v1';
+
+/** Cache API 仅支持 http/https；扩展、data、blob 等 scheme 必须跳过 */
+function shouldHandleFetch(request) {
+  if (request.method !== 'GET') return false;
+  const url = new URL(request.url);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+  if (url.pathname.startsWith('/api/')) return false;
+  return true;
+}
+
+function putInShellCache(request, response) {
+  return caches.open(SHELL_CACHE).then((cache) => cache.put(request, response)).catch(() => undefined);
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open('socialflow-shell-v1').then((cache) => cache.addAll(['./', './index.html'])).catch(() => undefined)
+    caches.open(SHELL_CACHE).then((cache) => cache.addAll(['./', './index.html'])).catch(() => undefined)
   );
   self.skipWaiting();
 });
@@ -8,7 +23,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== 'socialflow-shell-v1').map((key) => caches.delete(key)))
+      Promise.all(keys.filter((key) => key !== SHELL_CACHE).map((key) => caches.delete(key)))
     )
   );
   self.clients.claim();
@@ -16,17 +31,14 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
-  if (req.method !== 'GET') return;
-
-  const url = new URL(req.url);
-  if (url.pathname.startsWith('/api/')) return;
+  if (!shouldHandleFetch(req)) return;
 
   if (req.mode === 'navigate') {
     event.respondWith(
       fetch(req)
         .then((res) => {
           const copy = res.clone();
-          caches.open('socialflow-shell-v1').then((cache) => cache.put('./index.html', copy));
+          void putInShellCache(new Request('./index.html'), copy);
           return res;
         })
         .catch(() => caches.match('./index.html').then((cached) => cached || Response.error()))
@@ -40,7 +52,7 @@ self.addEventListener('fetch', (event) => {
         .then((res) => {
           if (res.ok) {
             const copy = res.clone();
-            caches.open('socialflow-shell-v1').then((cache) => cache.put(req, copy));
+            void putInShellCache(req, copy);
           }
           return res;
         })

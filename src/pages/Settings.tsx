@@ -124,6 +124,8 @@ const Settings: React.FC = () => {
         displayname: profile.displayname,
         photourl: profile.photourl,
       });
+    } else {
+      form.resetFields();
     }
   }, [profile, form]);
 
@@ -137,10 +139,12 @@ const Settings: React.FC = () => {
   }, [profile?.haspassword]);
 
   useEffect(() => {
-    if (user) {
-      void fetchPasswordStatus();
+    if (!user?.id) {
+      setHasPassword(false);
+      return;
     }
-  }, [fetchPasswordStatus, user]);
+    void fetchPasswordStatus();
+  }, [fetchPasswordStatus, user?.id]);
 
   useEffect(() => {
     const loadPushState = async () => {
@@ -273,9 +277,9 @@ const Settings: React.FC = () => {
               </Upload>
             </div>
             <div style={{ flex: 1 }}>
-              <Text type="secondary">{t('settings.userId')} {user?.id}</Text>
+              <Text type="secondary">{t('settings.userId')} {profile?.id ?? user?.id}</Text>
               <br />
-              <Text type="secondary">{t('settings.registeredEmail')} {user?.email}</Text>
+              <Text type="secondary">{t('settings.registeredEmail')} {profile?.email ?? user?.email}</Text>
             </div>
           </div>
           
