@@ -249,6 +249,7 @@ function normalizeSearch(value: string | undefined) {
 type PageCursor = {
   createdat: number;
   id: string;
+  type?: string;
 };
 
 type PaginatedResponse<T> = {
@@ -260,7 +261,14 @@ type PaginatedResponse<T> = {
 type CursorRow = Record<string, unknown> & {
   id?: unknown;
   createdat?: unknown;
+  type?: unknown;
 };
+
+type FeedType = 'all' | 'post' | 'project';
+type SearchType = 'all' | 'user' | 'post' | 'project';
+type ContentType = 'post' | 'project';
+
+type AttachmentMap = Record<ContentType, Map<string, ReturnType<typeof toFileAsset>[]>>;
 
 function parseOptionalLimit(value: string | undefined, fallback: number, max: number): number | null {
   if (value === undefined) return null;
@@ -270,8 +278,9 @@ function parseOptionalLimit(value: string | undefined, fallback: number, max: nu
 function encodePageCursor(row: CursorRow): string | null {
   const createdat = Number(row.createdat);
   const id = String(row.id ?? '').trim();
+  const type = String(row.type ?? '').trim();
   if (!Number.isFinite(createdat) || !id) return null;
-  const json = JSON.stringify({ createdat, id });
+  const json = JSON.stringify({ createdat, id, ...(type ? { type } : {}) });
   return Buffer.from(json, 'utf8')
     .toString('base64')
     .replace(/\+/g, '-')
@@ -288,17 +297,28 @@ function decodePageCursor(value: string | undefined): PageCursor | null {
     const parsed = JSON.parse(Buffer.from(padded, 'base64').toString('utf8')) as Partial<PageCursor>;
     const createdat = Number(parsed.createdat);
     const id = String(parsed.id ?? '').trim();
+    const type = String(parsed.type ?? '').trim();
     if (!Number.isFinite(createdat) || !id) return null;
-    return { createdat, id };
+    return { createdat, id, ...(type ? { type } : {}) };
   } catch {
     return null;
   }
 }
 
+function cursorTypeRank(value: unknown) {
+  const type = String(value ?? '');
+  if (type === 'post') return 3;
+  if (type === 'project') return 2;
+  if (type === 'user') return 1;
+  return 0;
+}
+
 function compareCursorRows(a: CursorRow, b: CursorRow) {
   const timeDelta = Number(b.createdat ?? 0) - Number(a.createdat ?? 0);
   if (timeDelta !== 0) return timeDelta;
-  return String(b.id ?? '').localeCompare(String(a.id ?? ''));
+  const idDelta = String(b.id ?? '').localeCompare(String(a.id ?? ''));
+  if (idDelta !== 0) return idDelta;
+  return cursorTypeRank(b.type) - cursorTypeRank(a.type);
 }
 
 function toPaginatedResponse<T extends CursorRow>(rows: T[], limit: number): PaginatedResponse<T> {
@@ -313,6 +333,94 @@ function toPaginatedResponse<T extends CursorRow>(rows: T[], limit: number): Pag
 
 function emptyPaginatedResponse<T>(): PaginatedResponse<T> {
   return { items: [], nextCursor: null, hasMore: false };
+}
+
+function mergeAttachmentRows(rows: Array<Record<string, unknown> & FileAssetRow>, contentIdKey: string) {
+  const map = new Map<string, ReturnType<typeof toFileAsset>[]>();
+  for (const row of rows) {
+    const contentId = String(row[contentIdKey] ?? '').trim();
+    if (!contentId) continue;
+    const list = map.get(contentId) ?? [];
+    list.push(toFileAsset(row));
+    map.set(contentId, list);
+  }
+  return map;
+}
+
+async function getContentAttachmentAssetsBatch(params: { postIds?: string[]; projectIds?: string[] }): Promise<AttachmentMap> {
+  const postIds = Array.from(new Set((params.postIds ?? []).filter((id) => UUID_RE.test(id))));
+  const projectIds = Array.from(new Set((params.projectIds ?? []).filter((id) => UUID_RE.test(id))));
+  const result: AttachmentMap = { post: new Map(), project: new Map() };
+  if (postIds.length === 0 && projectIds.length === 0) return result;
+
+  let rows: Array<Record<string, unknown> & FileAssetRow>;
+  if (postIds.length > 0 && projectIds.length > 0) {
+    rows = (await sql`
+      SELECT 'post' AS contenttype, pa.postid::text AS contentid, pa.sortorder AS attachmentsortorder, pa.createdat AS attachmentcreatedat, fa.*
+      FROM post_attachments pa
+      JOIN file_assets fa ON fa.id = pa.assetid
+      WHERE pa.postid = ANY(${sql.array(postIds)}::uuid[])
+      UNION ALL
+      SELECT 'project' AS contenttype, pa.projectid::text AS contentid, pa.sortorder AS attachmentsortorder, pa.createdat AS attachmentcreatedat, fa.*
+      FROM project_attachments pa
+      JOIN file_assets fa ON fa.id = pa.assetid
+      WHERE pa.projectid = ANY(${sql.array(projectIds)}::uuid[])
+      ORDER BY contenttype ASC, contentid ASC, attachmentsortorder ASC, attachmentcreatedat ASC
+    `) as unknown as Array<Record<string, unknown> & FileAssetRow>;
+  } else if (postIds.length > 0) {
+    rows = (await sql`
+      SELECT 'post' AS contenttype, pa.postid::text AS contentid, pa.sortorder AS attachmentsortorder, pa.createdat AS attachmentcreatedat, fa.*
+      FROM post_attachments pa
+      JOIN file_assets fa ON fa.id = pa.assetid
+      WHERE pa.postid = ANY(${sql.array(postIds)}::uuid[])
+      ORDER BY pa.postid ASC, pa.sortorder ASC, pa.createdat ASC
+    `) as unknown as Array<Record<string, unknown> & FileAssetRow>;
+  } else {
+    rows = (await sql`
+      SELECT 'project' AS contenttype, pa.projectid::text AS contentid, pa.sortorder AS attachmentsortorder, pa.createdat AS attachmentcreatedat, fa.*
+      FROM project_attachments pa
+      JOIN file_assets fa ON fa.id = pa.assetid
+      WHERE pa.projectid = ANY(${sql.array(projectIds)}::uuid[])
+      ORDER BY pa.projectid ASC, pa.sortorder ASC, pa.createdat ASC
+    `) as unknown as Array<Record<string, unknown> & FileAssetRow>;
+  }
+
+  for (const row of rows) {
+    const contentType = row.contenttype === 'project' ? 'project' : row.contenttype === 'post' ? 'post' : null;
+    const contentId = String(row.contentid ?? '').trim();
+    if (!contentType || !contentId) continue;
+    const list = result[contentType].get(contentId) ?? [];
+    list.push(toFileAsset(row));
+    result[contentType].set(contentId, list);
+  }
+  return result;
+}
+
+async function attachCurrentPageAssets<T extends Record<string, unknown> & { type?: unknown; id?: unknown; fileattachments?: unknown }>(items: T[]) {
+  const postIds = items
+    .filter((item) => item.type === 'post')
+    .map((item) => String(item.id ?? ''));
+  const projectIds = items
+    .filter((item) => item.type === 'project')
+    .map((item) => String(item.id ?? ''));
+  const attachments = await getContentAttachmentAssetsBatch({ postIds, projectIds });
+  for (const item of items) {
+    if (item.type === 'post' || item.type === 'project') {
+      item.fileattachments = attachments[item.type].get(String(item.id ?? '')) ?? [];
+    }
+  }
+}
+
+function cursorPredicate(tableAlias: string, cursor: PageCursor | null, includeType = false) {
+  if (!cursor) return sql`true`;
+  if (!includeType || !cursor.type) {
+    return sql`${sql.unsafe(tableAlias)}.createdat < ${cursor.createdat} OR (${sql.unsafe(tableAlias)}.createdat = ${cursor.createdat} AND ${sql.unsafe(tableAlias)}.id < ${cursor.id})`;
+  }
+  return sql`
+    ${sql.unsafe(tableAlias)}.createdat < ${cursor.createdat}
+    OR (${sql.unsafe(tableAlias)}.createdat = ${cursor.createdat} AND ${sql.unsafe(tableAlias)}.id < ${cursor.id})
+    OR (${sql.unsafe(tableAlias)}.createdat = ${cursor.createdat} AND ${sql.unsafe(tableAlias)}.id = ${cursor.id} AND ${sql.unsafe(tableAlias)}.type < ${cursor.type})
+  `;
 }
 
 function normalizeExtFromName(name: string) {
@@ -1512,7 +1620,7 @@ app.get('/api/feeds', async (c) => {
   const showAll = c.req.query('showAll') === 'true' || c.req.query('showAll') === '1';
   const authorId = c.req.query('authorId')?.trim() ?? '';
   const requestedType = c.req.query('type');
-  const feedType = requestedType === 'post' || requestedType === 'project' ? requestedType : 'all';
+  const feedType: FeedType = requestedType === 'post' || requestedType === 'project' ? requestedType : 'all';
   const limit = parseOptionalLimit(c.req.query('limit'), 20, 50);
   const cursor = decodePageCursor(c.req.query('cursor'));
 
@@ -1521,10 +1629,59 @@ app.get('/api/feeds', async (c) => {
   }
 
   const queryLimit = limit === null ? null : limit + 1;
-  const postsPromise = feedType === 'project'
-    ? Promise.resolve([] as Record<string, unknown>[])
-    : sql`
-        SELECT p.*,
+  const cursorRank = cursorTypeRank(cursor?.type);
+  let rows: Array<Record<string, unknown> & { type: ContentType; fileattachments?: unknown }>;
+
+  if (feedType === 'post') {
+    rows = (await sql`
+      SELECT p.*,
+        json_build_object(
+          'displayname', pr.displayname,
+          'photourl', pr.photourl
+        ) AS profiles,
+        'post' AS type
+      FROM posts p
+      LEFT JOIN profiles pr ON pr.id = p.authorid
+      WHERE (${showAll ? sql`true` : sql`p.isrecommended = true`})
+        AND (${authorId ? sql`p.authorid = ${authorId}` : sql`true`})
+        AND (${cursor ? sql`p.createdat < ${cursor.createdat} OR (p.createdat = ${cursor.createdat} AND p.id < ${cursor.id})` : sql`true`})
+      ORDER BY p.createdat DESC, p.id DESC
+      ${queryLimit === null ? sql`` : sql`LIMIT ${queryLimit}`}
+    `) as unknown as Array<Record<string, unknown> & { type: ContentType; fileattachments?: unknown }>;
+  } else if (feedType === 'project') {
+    rows = (await sql`
+      SELECT p.*,
+        json_build_object(
+          'displayname', pr.displayname,
+          'photourl', pr.photourl
+        ) AS profiles,
+        'project' AS type
+      FROM projects p
+      LEFT JOIN profiles pr ON pr.id = p.authorid
+      WHERE (${showAll ? sql`true` : sql`p.isrecommended = true`})
+        AND (${authorId ? sql`p.authorid = ${authorId}` : sql`true`})
+        AND (${cursor ? sql`p.createdat < ${cursor.createdat} OR (p.createdat = ${cursor.createdat} AND p.id < ${cursor.id})` : sql`true`})
+      ORDER BY p.createdat DESC, p.id DESC
+      ${queryLimit === null ? sql`` : sql`LIMIT ${queryLimit}`}
+    `) as unknown as Array<Record<string, unknown> & { type: ContentType; fileattachments?: unknown }>;
+  } else {
+    rows = (await sql`
+      WITH feed_posts AS (
+        SELECT
+          p.id::text AS id,
+          p.authorid,
+          p.createdat,
+          p.likecount,
+          p.commentcount,
+          p.isrecommended,
+          p.content,
+          p.images,
+          NULL AS title,
+          NULL AS summary,
+          NULL AS coverurl,
+          NULL AS attachments,
+          'post' AS type,
+          3 AS typerank,
           json_build_object(
             'displayname', pr.displayname,
             'photourl', pr.photourl
@@ -1533,14 +1690,29 @@ app.get('/api/feeds', async (c) => {
         LEFT JOIN profiles pr ON pr.id = p.authorid
         WHERE (${showAll ? sql`true` : sql`p.isrecommended = true`})
           AND (${authorId ? sql`p.authorid = ${authorId}` : sql`true`})
-          AND (${cursor ? sql`p.createdat < ${cursor.createdat} OR (p.createdat = ${cursor.createdat} AND p.id < ${cursor.id})` : sql`true`})
-        ORDER BY p.createdat DESC, p.id DESC
-        ${queryLimit === null ? sql`` : sql`LIMIT ${queryLimit}`}
-      `;
-  const projectsPromise = feedType === 'post'
-    ? Promise.resolve([] as Record<string, unknown>[])
-    : sql`
-        SELECT p.*,
+          AND (${cursor ? sql`
+            p.createdat < ${cursor.createdat}
+            OR (p.createdat = ${cursor.createdat} AND p.id < ${cursor.id})
+            OR (p.createdat = ${cursor.createdat} AND p.id = ${cursor.id} AND 3 < ${cursorRank})
+          ` : sql`true`})
+        ${queryLimit === null ? sql`` : sql`ORDER BY p.createdat DESC, p.id DESC LIMIT ${queryLimit}`}
+      ),
+      feed_projects AS (
+        SELECT
+          p.id::text AS id,
+          p.authorid,
+          p.createdat,
+          p.likecount,
+          p.commentcount,
+          p.isrecommended,
+          p.content,
+          NULL AS images,
+          p.title,
+          p.summary,
+          p.coverurl,
+          p.attachments,
+          'project' AS type,
+          2 AS typerank,
           json_build_object(
             'displayname', pr.displayname,
             'photourl', pr.photourl
@@ -1549,22 +1721,29 @@ app.get('/api/feeds', async (c) => {
         LEFT JOIN profiles pr ON pr.id = p.authorid
         WHERE (${showAll ? sql`true` : sql`p.isrecommended = true`})
           AND (${authorId ? sql`p.authorid = ${authorId}` : sql`true`})
-          AND (${cursor ? sql`p.createdat < ${cursor.createdat} OR (p.createdat = ${cursor.createdat} AND p.id < ${cursor.id})` : sql`true`})
-        ORDER BY p.createdat DESC, p.id DESC
-        ${queryLimit === null ? sql`` : sql`LIMIT ${queryLimit}`}
-      `;
+          AND (${cursor ? sql`
+            p.createdat < ${cursor.createdat}
+            OR (p.createdat = ${cursor.createdat} AND p.id < ${cursor.id})
+            OR (p.createdat = ${cursor.createdat} AND p.id = ${cursor.id} AND 2 < ${cursorRank})
+          ` : sql`true`})
+        ${queryLimit === null ? sql`` : sql`ORDER BY p.createdat DESC, p.id DESC LIMIT ${queryLimit}`}
+      )
+      SELECT *
+      FROM (
+        SELECT * FROM feed_posts
+        UNION ALL
+        SELECT * FROM feed_projects
+      ) feed
+      ORDER BY feed.createdat DESC, feed.id DESC, feed.typerank DESC
+      ${queryLimit === null ? sql`` : sql`LIMIT ${queryLimit}`}
+    `) as unknown as Array<Record<string, unknown> & { type: ContentType; fileattachments?: unknown }>;
+  }
 
-  const [posts, projects] = await Promise.all([postsPromise, projectsPromise]);
-  const merged: Array<Record<string, unknown> & { type: 'post' | 'project'; fileattachments?: unknown }> = [
-    ...(posts as Record<string, unknown>[]).map((p) => ({ ...p, type: 'post' as const })),
-    ...(projects as Record<string, unknown>[]).map((p) => ({ ...p, type: 'project' as const })),
-  ].sort(compareCursorRows);
-
-  const page = limit === null ? null : toPaginatedResponse(merged, limit);
-  const items = page?.items ?? merged;
-
+  const page = limit === null ? null : toPaginatedResponse(rows, limit);
+  const items = page?.items ?? rows;
+  await attachCurrentPageAssets(items);
   for (const item of items) {
-    item.fileattachments = await getContentAttachmentAssets(item.type, String(item.id ?? ''));
+    delete item.typerank;
   }
 
   return c.json(page ? { ...page, items } : items);
@@ -1629,76 +1808,170 @@ app.get('/api/users', async (c) => {
 app.get('/api/search', async (c) => {
   const q = c.req.query('q')?.trim() ?? '';
   const requestedType = c.req.query('type');
-  const searchType = requestedType === 'user' || requestedType === 'post' || requestedType === 'project' ? requestedType : 'all';
+  const searchType: SearchType = requestedType === 'user' || requestedType === 'post' || requestedType === 'project' ? requestedType : 'all';
   const limit = parsePositiveInt(c.req.query('limit'), 20, 50);
   const cursor = decodePageCursor(c.req.query('cursor'));
   if (!q) return c.json(emptyPaginatedResponse<Record<string, unknown>>());
 
   const like = normalizeSearch(q);
   const queryLimit = limit + 1;
-  const usersPromise = searchType !== 'all' && searchType !== 'user'
-    ? Promise.resolve([] as Record<string, unknown>[])
-    : sql`
+  const cursorRank = cursorTypeRank(cursor?.type);
+  let rows: Array<Record<string, unknown> & { type: 'user' | ContentType; fileattachments?: unknown }>;
+
+  if (searchType === 'user') {
+    rows = (await sql`
+      SELECT
+        pr.id,
+        pr.id AS uid,
+        pr.createdat,
+        pr.displayname,
+        pr.photourl,
+        pr.role,
+        'user' AS type
+      FROM profiles pr
+      WHERE pr.displayname ILIKE ${like} ESCAPE '\\'
+        AND (${cursor ? sql`pr.createdat < ${cursor.createdat} OR (pr.createdat = ${cursor.createdat} AND pr.id < ${cursor.id})` : sql`true`})
+      ORDER BY pr.createdat DESC, pr.id DESC
+      LIMIT ${queryLimit}
+    `) as unknown as Array<Record<string, unknown> & { type: 'user' | ContentType; fileattachments?: unknown }>;
+  } else if (searchType === 'post') {
+    rows = (await sql`
+      SELECT p.*,
+        json_build_object('displayname', pr.displayname, 'photourl', pr.photourl) AS profiles,
+        'post' AS type
+      FROM posts p
+      LEFT JOIN profiles pr ON pr.id = p.authorid
+      WHERE (p.content ILIKE ${like} ESCAPE '\\' OR pr.displayname ILIKE ${like} ESCAPE '\\')
+        AND (${cursor ? sql`p.createdat < ${cursor.createdat} OR (p.createdat = ${cursor.createdat} AND p.id < ${cursor.id})` : sql`true`})
+      ORDER BY p.createdat DESC, p.id DESC
+      LIMIT ${queryLimit}
+    `) as unknown as Array<Record<string, unknown> & { type: 'user' | ContentType; fileattachments?: unknown }>;
+  } else if (searchType === 'project') {
+    rows = (await sql`
+      SELECT p.*,
+        json_build_object('displayname', pr.displayname, 'photourl', pr.photourl) AS profiles,
+        'project' AS type
+      FROM projects p
+      LEFT JOIN profiles pr ON pr.id = p.authorid
+      WHERE (p.title ILIKE ${like} ESCAPE '\\' OR p.summary ILIKE ${like} ESCAPE '\\' OR p.content ILIKE ${like} ESCAPE '\\' OR pr.displayname ILIKE ${like} ESCAPE '\\')
+        AND (${cursor ? sql`p.createdat < ${cursor.createdat} OR (p.createdat = ${cursor.createdat} AND p.id < ${cursor.id})` : sql`true`})
+      ORDER BY p.createdat DESC, p.id DESC
+      LIMIT ${queryLimit}
+    `) as unknown as Array<Record<string, unknown> & { type: 'user' | ContentType; fileattachments?: unknown }>;
+  } else {
+    rows = (await sql`
+      WITH search_users AS (
         SELECT
-          pr.id,
+          pr.id::text AS id,
+          pr.id::text AS uid,
           pr.createdat,
           pr.displayname,
           pr.photourl,
           pr.role,
-          'user' AS type
+          NULL AS authorid,
+          NULL AS likecount,
+          NULL AS commentcount,
+          NULL AS isrecommended,
+          NULL AS content,
+          NULL AS images,
+          NULL AS title,
+          NULL AS summary,
+          NULL AS coverurl,
+          NULL AS attachments,
+          'user' AS type,
+          1 AS typerank,
+          NULL AS profiles
         FROM profiles pr
         WHERE pr.displayname ILIKE ${like} ESCAPE '\\'
-          AND (${cursor ? sql`pr.createdat < ${cursor.createdat} OR (pr.createdat = ${cursor.createdat} AND pr.id < ${cursor.id})` : sql`true`})
+          AND (${cursor ? sql`
+            pr.createdat < ${cursor.createdat}
+            OR (pr.createdat = ${cursor.createdat} AND pr.id < ${cursor.id})
+            OR (pr.createdat = ${cursor.createdat} AND pr.id = ${cursor.id} AND 1 < ${cursorRank})
+          ` : sql`true`})
         ORDER BY pr.createdat DESC, pr.id DESC
         LIMIT ${queryLimit}
-      `;
-  const postsPromise = searchType !== 'all' && searchType !== 'post'
-    ? Promise.resolve([] as Record<string, unknown>[])
-    : sql`
-        SELECT p.*,
-          json_build_object('displayname', pr.displayname, 'photourl', pr.photourl) AS profiles,
-          'post' AS type
+      ),
+      search_posts AS (
+        SELECT
+          p.id::text AS id,
+          NULL AS uid,
+          p.createdat,
+          NULL AS displayname,
+          NULL AS photourl,
+          NULL AS role,
+          p.authorid,
+          p.likecount,
+          p.commentcount,
+          p.isrecommended,
+          p.content,
+          p.images,
+          NULL AS title,
+          NULL AS summary,
+          NULL AS coverurl,
+          NULL AS attachments,
+          'post' AS type,
+          3 AS typerank,
+          json_build_object('displayname', pr.displayname, 'photourl', pr.photourl) AS profiles
         FROM posts p
         LEFT JOIN profiles pr ON pr.id = p.authorid
         WHERE (p.content ILIKE ${like} ESCAPE '\\' OR pr.displayname ILIKE ${like} ESCAPE '\\')
-          AND (${cursor ? sql`p.createdat < ${cursor.createdat} OR (p.createdat = ${cursor.createdat} AND p.id < ${cursor.id})` : sql`true`})
+          AND (${cursor ? sql`
+            p.createdat < ${cursor.createdat}
+            OR (p.createdat = ${cursor.createdat} AND p.id < ${cursor.id})
+            OR (p.createdat = ${cursor.createdat} AND p.id = ${cursor.id} AND 3 < ${cursorRank})
+          ` : sql`true`})
         ORDER BY p.createdat DESC, p.id DESC
         LIMIT ${queryLimit}
-      `;
-  const projectsPromise = searchType !== 'all' && searchType !== 'project'
-    ? Promise.resolve([] as Record<string, unknown>[])
-    : sql`
-        SELECT p.*,
-          json_build_object('displayname', pr.displayname, 'photourl', pr.photourl) AS profiles,
-          'project' AS type
+      ),
+      search_projects AS (
+        SELECT
+          p.id::text AS id,
+          NULL AS uid,
+          p.createdat,
+          NULL AS displayname,
+          NULL AS photourl,
+          NULL AS role,
+          p.authorid,
+          p.likecount,
+          p.commentcount,
+          p.isrecommended,
+          p.content,
+          NULL AS images,
+          p.title,
+          p.summary,
+          p.coverurl,
+          p.attachments,
+          'project' AS type,
+          2 AS typerank,
+          json_build_object('displayname', pr.displayname, 'photourl', pr.photourl) AS profiles
         FROM projects p
         LEFT JOIN profiles pr ON pr.id = p.authorid
         WHERE (p.title ILIKE ${like} ESCAPE '\\' OR p.summary ILIKE ${like} ESCAPE '\\' OR p.content ILIKE ${like} ESCAPE '\\' OR pr.displayname ILIKE ${like} ESCAPE '\\')
-          AND (${cursor ? sql`p.createdat < ${cursor.createdat} OR (p.createdat = ${cursor.createdat} AND p.id < ${cursor.id})` : sql`true`})
+          AND (${cursor ? sql`
+            p.createdat < ${cursor.createdat}
+            OR (p.createdat = ${cursor.createdat} AND p.id < ${cursor.id})
+            OR (p.createdat = ${cursor.createdat} AND p.id = ${cursor.id} AND 2 < ${cursorRank})
+          ` : sql`true`})
         ORDER BY p.createdat DESC, p.id DESC
         LIMIT ${queryLimit}
-      `;
+      )
+      SELECT *
+      FROM (
+        SELECT * FROM search_users
+        UNION ALL
+        SELECT * FROM search_posts
+        UNION ALL
+        SELECT * FROM search_projects
+      ) search
+      ORDER BY search.createdat DESC, search.id DESC, search.typerank DESC
+      LIMIT ${queryLimit}
+    `) as unknown as Array<Record<string, unknown> & { type: 'user' | ContentType; fileattachments?: unknown }>;
+  }
 
-  const [users, posts, projects] = await Promise.all([usersPromise, postsPromise, projectsPromise]);
-  const merged: Array<Record<string, unknown> & { type: 'user' | 'post' | 'project'; fileattachments?: unknown }> = [
-    ...(users as Record<string, unknown>[]).map((u) => ({
-      uid: u.id,
-      id: u.id,
-      createdat: u.createdat,
-      displayname: u.displayname,
-      photourl: u.photourl,
-      role: u.role,
-      type: 'user' as const,
-    })),
-    ...(posts as Record<string, unknown>[]).map((p) => ({ ...p, type: 'post' as const })),
-    ...(projects as Record<string, unknown>[]).map((p) => ({ ...p, type: 'project' as const })),
-  ].sort(compareCursorRows);
-
-  const page = toPaginatedResponse(merged, limit);
+  const page = toPaginatedResponse(rows, limit);
+  await attachCurrentPageAssets(page.items);
   for (const item of page.items) {
-    if (item.type === 'post' || item.type === 'project') {
-      item.fileattachments = await getContentAttachmentAssets(item.type, String(item.id ?? ''));
-    }
+    delete item.typerank;
   }
 
   return c.json(page);
