@@ -246,6 +246,75 @@ function normalizeSearch(value: string | undefined) {
   return `%${(value ?? '').trim().replace(/[%_\\]/g, '\\$&')}%`;
 }
 
+type PageCursor = {
+  createdat: number;
+  id: string;
+};
+
+type PaginatedResponse<T> = {
+  items: T[];
+  nextCursor: string | null;
+  hasMore: boolean;
+};
+
+type CursorRow = Record<string, unknown> & {
+  id?: unknown;
+  createdat?: unknown;
+};
+
+function parseOptionalLimit(value: string | undefined, fallback: number, max: number): number | null {
+  if (value === undefined) return null;
+  return parsePositiveInt(value, fallback, max);
+}
+
+function encodePageCursor(row: CursorRow): string | null {
+  const createdat = Number(row.createdat);
+  const id = String(row.id ?? '').trim();
+  if (!Number.isFinite(createdat) || !id) return null;
+  const json = JSON.stringify({ createdat, id });
+  return Buffer.from(json, 'utf8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function decodePageCursor(value: string | undefined): PageCursor | null {
+  const raw = value?.trim();
+  if (!raw) return null;
+  try {
+    const base64 = raw.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+    const parsed = JSON.parse(Buffer.from(padded, 'base64').toString('utf8')) as Partial<PageCursor>;
+    const createdat = Number(parsed.createdat);
+    const id = String(parsed.id ?? '').trim();
+    if (!Number.isFinite(createdat) || !id) return null;
+    return { createdat, id };
+  } catch {
+    return null;
+  }
+}
+
+function compareCursorRows(a: CursorRow, b: CursorRow) {
+  const timeDelta = Number(b.createdat ?? 0) - Number(a.createdat ?? 0);
+  if (timeDelta !== 0) return timeDelta;
+  return String(b.id ?? '').localeCompare(String(a.id ?? ''));
+}
+
+function toPaginatedResponse<T extends CursorRow>(rows: T[], limit: number): PaginatedResponse<T> {
+  const pageItems = rows.slice(0, limit);
+  const last = pageItems[pageItems.length - 1];
+  return {
+    items: pageItems,
+    nextCursor: rows.length > limit && last ? encodePageCursor(last) : null,
+    hasMore: rows.length > limit,
+  };
+}
+
+function emptyPaginatedResponse<T>(): PaginatedResponse<T> {
+  return { items: [], nextCursor: null, hasMore: false };
+}
+
 function normalizeExtFromName(name: string) {
   const clean = name.split(/[?#]/)[0] ?? '';
   const dot = clean.lastIndexOf('.');
@@ -1442,53 +1511,63 @@ app.delete('/api/admin/settings/:key', authMiddleware, adminMiddleware, async (c
 app.get('/api/feeds', async (c) => {
   const showAll = c.req.query('showAll') === 'true' || c.req.query('showAll') === '1';
   const authorId = c.req.query('authorId')?.trim() ?? '';
+  const requestedType = c.req.query('type');
+  const feedType = requestedType === 'post' || requestedType === 'project' ? requestedType : 'all';
+  const limit = parseOptionalLimit(c.req.query('limit'), 20, 50);
+  const cursor = decodePageCursor(c.req.query('cursor'));
+
   if (authorId && !UUID_RE.test(authorId)) {
     return c.json({ error: 'invalid authorId' }, 400);
   }
-  const [posts, projects] = await Promise.all([
-    sql`
-      SELECT p.*,
-        json_build_object(
-          'displayname', pr.displayname,
-          'photourl', pr.photourl
-        ) AS profiles
-      FROM posts p
-      LEFT JOIN profiles pr ON pr.id = p.authorid
-      ORDER BY p.createdat DESC
-    `,
-    sql`
-      SELECT p.*,
-        json_build_object(
-          'displayname', pr.displayname,
-          'photourl', pr.photourl
-        ) AS profiles
-      FROM projects p
-      LEFT JOIN profiles pr ON pr.id = p.authorid
-      ORDER BY p.createdat DESC
-    `,
-  ]);
 
-  const all: Array<Record<string, unknown> & { type: 'post' | 'project'; fileattachments?: unknown }> = [
+  const queryLimit = limit === null ? null : limit + 1;
+  const postsPromise = feedType === 'project'
+    ? Promise.resolve([] as Record<string, unknown>[])
+    : sql`
+        SELECT p.*,
+          json_build_object(
+            'displayname', pr.displayname,
+            'photourl', pr.photourl
+          ) AS profiles
+        FROM posts p
+        LEFT JOIN profiles pr ON pr.id = p.authorid
+        WHERE (${showAll ? sql`true` : sql`p.isrecommended = true`})
+          AND (${authorId ? sql`p.authorid = ${authorId}` : sql`true`})
+          AND (${cursor ? sql`p.createdat < ${cursor.createdat} OR (p.createdat = ${cursor.createdat} AND p.id < ${cursor.id})` : sql`true`})
+        ORDER BY p.createdat DESC, p.id DESC
+        ${queryLimit === null ? sql`` : sql`LIMIT ${queryLimit}`}
+      `;
+  const projectsPromise = feedType === 'post'
+    ? Promise.resolve([] as Record<string, unknown>[])
+    : sql`
+        SELECT p.*,
+          json_build_object(
+            'displayname', pr.displayname,
+            'photourl', pr.photourl
+          ) AS profiles
+        FROM projects p
+        LEFT JOIN profiles pr ON pr.id = p.authorid
+        WHERE (${showAll ? sql`true` : sql`p.isrecommended = true`})
+          AND (${authorId ? sql`p.authorid = ${authorId}` : sql`true`})
+          AND (${cursor ? sql`p.createdat < ${cursor.createdat} OR (p.createdat = ${cursor.createdat} AND p.id < ${cursor.id})` : sql`true`})
+        ORDER BY p.createdat DESC, p.id DESC
+        ${queryLimit === null ? sql`` : sql`LIMIT ${queryLimit}`}
+      `;
+
+  const [posts, projects] = await Promise.all([postsPromise, projectsPromise]);
+  const merged: Array<Record<string, unknown> & { type: 'post' | 'project'; fileattachments?: unknown }> = [
     ...(posts as Record<string, unknown>[]).map((p) => ({ ...p, type: 'post' as const })),
     ...(projects as Record<string, unknown>[]).map((p) => ({ ...p, type: 'project' as const })),
-  ]
-    .filter((item: Record<string, unknown>) =>
-      showAll ? true : item.isrecommended === true
-    )
-    .filter((item: Record<string, unknown>) =>
-      !authorId || String(item.authorid ?? '') === authorId
-    )
-    .sort(
-      (a: Record<string, unknown>, b: Record<string, unknown>) =>
-        Number(b.createdat) - Number(a.createdat)
-    );
+  ].sort(compareCursorRows);
 
-  for (const item of all) {
-    const contentType = item.type === 'project' ? 'project' : 'post';
-    item.fileattachments = await getContentAttachmentAssets(contentType, String(item.id ?? ''));
+  const page = limit === null ? null : toPaginatedResponse(merged, limit);
+  const items = page?.items ?? merged;
+
+  for (const item of items) {
+    item.fileattachments = await getContentAttachmentAssets(item.type, String(item.id ?? ''));
   }
 
-  return c.json(all);
+  return c.json(page ? { ...page, items } : items);
 });
 
 // ---------- posts / projects get ----------
@@ -1544,6 +1623,85 @@ app.get('/api/users', async (c) => {
       role: u.role,
     }))
   );
+});
+
+// ---------- search ----------
+app.get('/api/search', async (c) => {
+  const q = c.req.query('q')?.trim() ?? '';
+  const requestedType = c.req.query('type');
+  const searchType = requestedType === 'user' || requestedType === 'post' || requestedType === 'project' ? requestedType : 'all';
+  const limit = parsePositiveInt(c.req.query('limit'), 20, 50);
+  const cursor = decodePageCursor(c.req.query('cursor'));
+  if (!q) return c.json(emptyPaginatedResponse<Record<string, unknown>>());
+
+  const like = normalizeSearch(q);
+  const queryLimit = limit + 1;
+  const usersPromise = searchType !== 'all' && searchType !== 'user'
+    ? Promise.resolve([] as Record<string, unknown>[])
+    : sql`
+        SELECT
+          pr.id,
+          pr.createdat,
+          pr.displayname,
+          pr.photourl,
+          pr.role,
+          'user' AS type
+        FROM profiles pr
+        WHERE pr.displayname ILIKE ${like} ESCAPE '\\'
+          AND (${cursor ? sql`pr.createdat < ${cursor.createdat} OR (pr.createdat = ${cursor.createdat} AND pr.id < ${cursor.id})` : sql`true`})
+        ORDER BY pr.createdat DESC, pr.id DESC
+        LIMIT ${queryLimit}
+      `;
+  const postsPromise = searchType !== 'all' && searchType !== 'post'
+    ? Promise.resolve([] as Record<string, unknown>[])
+    : sql`
+        SELECT p.*,
+          json_build_object('displayname', pr.displayname, 'photourl', pr.photourl) AS profiles,
+          'post' AS type
+        FROM posts p
+        LEFT JOIN profiles pr ON pr.id = p.authorid
+        WHERE (p.content ILIKE ${like} ESCAPE '\\' OR pr.displayname ILIKE ${like} ESCAPE '\\')
+          AND (${cursor ? sql`p.createdat < ${cursor.createdat} OR (p.createdat = ${cursor.createdat} AND p.id < ${cursor.id})` : sql`true`})
+        ORDER BY p.createdat DESC, p.id DESC
+        LIMIT ${queryLimit}
+      `;
+  const projectsPromise = searchType !== 'all' && searchType !== 'project'
+    ? Promise.resolve([] as Record<string, unknown>[])
+    : sql`
+        SELECT p.*,
+          json_build_object('displayname', pr.displayname, 'photourl', pr.photourl) AS profiles,
+          'project' AS type
+        FROM projects p
+        LEFT JOIN profiles pr ON pr.id = p.authorid
+        WHERE (p.title ILIKE ${like} ESCAPE '\\' OR p.summary ILIKE ${like} ESCAPE '\\' OR p.content ILIKE ${like} ESCAPE '\\' OR pr.displayname ILIKE ${like} ESCAPE '\\')
+          AND (${cursor ? sql`p.createdat < ${cursor.createdat} OR (p.createdat = ${cursor.createdat} AND p.id < ${cursor.id})` : sql`true`})
+        ORDER BY p.createdat DESC, p.id DESC
+        LIMIT ${queryLimit}
+      `;
+
+  const [users, posts, projects] = await Promise.all([usersPromise, postsPromise, projectsPromise]);
+  const merged: Array<Record<string, unknown> & { type: 'user' | 'post' | 'project'; fileattachments?: unknown }> = [
+    ...(users as Record<string, unknown>[]).map((u) => ({
+      uid: u.id,
+      id: u.id,
+      createdat: u.createdat,
+      displayname: u.displayname,
+      photourl: u.photourl,
+      role: u.role,
+      type: 'user' as const,
+    })),
+    ...(posts as Record<string, unknown>[]).map((p) => ({ ...p, type: 'post' as const })),
+    ...(projects as Record<string, unknown>[]).map((p) => ({ ...p, type: 'project' as const })),
+  ].sort(compareCursorRows);
+
+  const page = toPaginatedResponse(merged, limit);
+  for (const item of page.items) {
+    if (item.type === 'post' || item.type === 'project') {
+      item.fileattachments = await getContentAttachmentAssets(item.type, String(item.id ?? ''));
+    }
+  }
+
+  return c.json(page);
 });
 
 // ---------- profile PATCH ----------
@@ -2244,16 +2402,24 @@ app.post('/api/likes/toggle', authMiddleware, async (c) => {
 app.get('/api/comments', async (c) => {
   const contentId = c.req.query('contentId');
   const contentType = c.req.query('contentType');
+  const limit = parseOptionalLimit(c.req.query('limit'), 20, 50);
+  const cursor = decodePageCursor(c.req.query('cursor'));
   if (!contentId || !contentType) return c.json({ error: 'contentId and contentType required' }, 400);
+
+  const queryLimit = limit === null ? null : limit + 1;
   const rows = await sql`
     SELECT c.*,
       json_build_object('displayname', pr.displayname, 'photourl', pr.photourl) AS profiles
     FROM comments c
     LEFT JOIN profiles pr ON pr.id = c.authorid
     WHERE c.contentid = ${contentId} AND c.contenttype = ${contentType}
-    ORDER BY c.createdat DESC
+      AND (${cursor ? sql`c.createdat < ${cursor.createdat} OR (c.createdat = ${cursor.createdat} AND c.id < ${cursor.id})` : sql`true`})
+    ORDER BY c.createdat DESC, c.id DESC
+    ${queryLimit === null ? sql`` : sql`LIMIT ${queryLimit}`}
   `;
-  return c.json(rows);
+
+  const commentRows = rows as Array<Record<string, unknown> & CursorRow>;
+  return c.json(limit === null ? commentRows : toPaginatedResponse(commentRows, limit));
 });
 
 app.get('/api/comments/latest', async (c) => {

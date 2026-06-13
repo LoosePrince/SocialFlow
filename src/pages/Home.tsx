@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { useFeeds } from '../hooks/useFeeds';
+import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import PostCard from '../components/PostCard';
 import ProjectCard from '../components/ProjectCard';
-import { App, Drawer, Grid, Modal } from 'antd';
+import { App, Drawer, Grid, Modal, Spin, Typography } from 'antd';
 import { motion } from 'framer-motion';
 import { HomeFeedSkeleton } from '../components/PageSkeletons';
 import { useAuth } from '../context/AuthContext';
@@ -14,21 +15,22 @@ import FeedFilter, { FeedFilterValue } from '../components/FeedFilter';
 import ActionEmpty from '../components/ActionEmpty';
 
 const { useBreakpoint } = Grid;
+const { Text } = Typography;
 
 const Home: React.FC = () => {
   const { user } = useAuth();
   const { openLoginModal } = useLoginModal();
-  const { feeds, loading } = useFeeds();
   const { message } = App.useApp();
   const { t } = useI18n();
   const screens = useBreakpoint();
   const [quickCommentPostId, setQuickCommentPostId] = useState<string | null>(null);
   const [feedFilter, setFeedFilter] = useState<FeedFilterValue>('all');
-
-  const visibleFeeds = useMemo(() => {
-    if (feedFilter === 'all') return feeds;
-    return feeds.filter((item) => item.type === feedFilter);
-  }, [feedFilter, feeds]);
+  const { feeds, loading, loadingMore, hasMore, loadMore } = useFeeds({ type: feedFilter });
+  const loadMoreRef = useInfiniteScroll({
+    loading: loading || loadingMore,
+    hasMore,
+    onLoadMore: loadMore,
+  });
 
   const emptyDescription =
     feedFilter === 'post'
@@ -77,18 +79,23 @@ const Home: React.FC = () => {
         style={{ marginInline: screens.md ? 0 : -16 }}
       >
         <FeedFilter value={feedFilter} onChange={setFeedFilter} sticky />
-        {visibleFeeds.length === 0 ? (
+        {feeds.length === 0 ? (
           <ActionEmpty title={emptyDescription} description={t('home.emptyHint')} />
         ) : (
-          visibleFeeds.map((item) => (
-            <div key={item.id}>
-              {item.type === 'post' ? (
-                <PostCard post={item} onLike={(id) => handleLike(id, 'post')} onComment={handleComment} />
-              ) : (
-                <ProjectCard project={item} />
-              )}
+          <>
+            {feeds.map((item) => (
+              <div key={`${item.type}-${item.id}`}>
+                {item.type === 'post' ? (
+                  <PostCard post={item} onLike={(id) => handleLike(id, 'post')} onComment={handleComment} />
+                ) : (
+                  <ProjectCard project={item} />
+                )}
+              </div>
+            ))}
+            <div ref={loadMoreRef} style={{ minHeight: 32, padding: 16, textAlign: 'center' }}>
+              {loadingMore ? <Spin /> : hasMore ? <Text type="secondary">加载更多</Text> : null}
             </div>
-          ))
+          </>
         )}
       </motion.div>
 

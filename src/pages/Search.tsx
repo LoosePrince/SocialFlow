@@ -1,20 +1,45 @@
-import React, { useMemo, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Input, Typography, Empty, List, Avatar, Spin, Divider, theme, Card, Flex, Tag } from 'antd';
 import { Search as SearchIcon, User, FileText, FolderKanban } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useUsers } from '../hooks/useUsers';
-import { useFeeds } from '../hooks/useFeeds';
 import { useI18n } from '../context/I18nContext';
 import { getGithubUrl } from '../github';
 import CommentText from '../components/CommentText';
 import PageHeader from '../components/PageHeader';
 import ResponsiveContainer from '../components/ResponsiveContainer';
+import { apiJson } from '../lib/api';
+import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 
 const { Text, Paragraph } = Typography;
 
 const SEARCH_RECENT_KEY = 'socialflow.search.recent';
 const MAX_RECENT_SEARCHES = 8;
+const SEARCH_PAGE_SIZE = 20;
+
+type SearchItemType = 'user' | 'post' | 'project';
+
+type SearchItem = {
+  id: string;
+  uid?: string;
+  type: SearchItemType;
+  displayname?: string;
+  photourl?: string;
+  role?: string;
+  content?: string;
+  title?: string;
+  summary?: string;
+  profiles?: { displayname?: string; photourl?: string } | null;
+  authorName?: string;
+  authorPhoto?: string;
+  createdat?: string | number;
+};
+
+type SearchPage = {
+  items: SearchItem[];
+  nextCursor: string | null;
+  hasMore: boolean;
+};
 
 function readRecentSearches(): string[] {
   try {
@@ -30,9 +55,49 @@ function saveRecentSearches(items: string[]) {
   window.localStorage.setItem(SEARCH_RECENT_KEY, JSON.stringify(items.slice(0, MAX_RECENT_SEARCHES)));
 }
 
-function matchQuery(text: string, q: string): boolean {
-  if (!q.trim()) return false;
-  return text.toLowerCase().includes(q.trim().toLowerCase());
+function normalizeSearchItems(items: SearchItem[]): SearchItem[] {
+  return items.map((item) => {
+    if (item.type === 'user') {
+      return {
+        ...item,
+        uid: item.uid ?? item.id,
+        photourl: item.photourl ? getGithubUrl(item.photourl) : '',
+      };
+    }
+
+    const authorPhoto = item.profiles?.photourl ?? item.authorPhoto ?? '';
+    return {
+      ...item,
+      authorName: item.profiles?.displayname ?? item.authorName ?? '',
+      authorPhoto: authorPhoto ? getGithubUrl(authorPhoto) : '',
+    };
+  });
+}
+
+function mergeSearchItems(current: SearchItem[], incoming: SearchItem[], mode: 'replace' | 'append') {
+  const source = mode === 'replace' ? incoming : [...current, ...incoming];
+  const seen = new Set<string>();
+  const merged: SearchItem[] = [];
+
+  for (const item of source) {
+    const id = item.id || item.uid;
+    if (!id) continue;
+    const key = `${item.type}:${id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push({ ...item, id });
+  }
+
+  return merged;
+}
+
+function buildSearchPath(query: string, cursor?: string | null) {
+  const params = new URLSearchParams();
+  params.set('q', query);
+  params.set('type', 'all');
+  params.set('limit', String(SEARCH_PAGE_SIZE));
+  if (cursor) params.set('cursor', cursor);
+  return `/api/search?${params.toString()}`;
 }
 
 function HighlightText({ text, query }: { text: string; query: string }) {
@@ -61,54 +126,112 @@ function HighlightText({ text, query }: { text: string; query: string }) {
 
 const Search: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const q = searchParams.get('q') ?? '';
-  const [inputText, setInputText] = useState(() => searchParams.get('q') ?? '');
+  const urlQuery = searchParams.get('q') ?? '';
+  const [inputText, setInputText] = useState(() => urlQuery);
+  const [debouncedQuery, setDebouncedQuery] = useState(() => urlQuery.trim());
   const [recentSearches, setRecentSearches] = useState<string[]>(readRecentSearches);
+  const [results, setResults] = useState<SearchItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const requestSeq = useRef(0);
+  const loadingMoreRef = useRef(false);
   const { token } = theme.useToken();
   const { t } = useI18n();
 
   useEffect(() => {
-    setInputText(searchParams.get('q') ?? '');
-  }, [searchParams]);
-  const { users, loading: usersLoading } = useUsers();
-  const { feeds, loading: feedsLoading } = useFeeds(true);
+    setInputText(urlQuery);
+    setDebouncedQuery(urlQuery.trim());
+  }, [urlQuery]);
 
-  const loading = usersLoading || feedsLoading;
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(inputText.trim());
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [inputText]);
 
-  const filteredUsers = useMemo(() => {
-    if (!q.trim()) return [];
-    return users.filter((u) => matchQuery(u.displayname, q));
-  }, [users, q]);
+  useEffect(() => {
+    const query = debouncedQuery.trim();
+    const seq = requestSeq.current + 1;
+    requestSeq.current = seq;
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
+    setNextCursor(null);
+    setHasMore(false);
 
-  const filteredPosts = useMemo(() => {
-    if (!q.trim()) return [];
-    return feeds.filter((item) => {
-      if (item.type !== 'post') return false;
-      const content = String(item.content ?? '');
-      const name = String(item.authorName ?? '');
-      return matchQuery(content, q) || matchQuery(name, q);
-    });
-  }, [feeds, q]);
+    if (!query) {
+      setResults([]);
+      setLoading(false);
+      return;
+    }
 
-  const filteredProjects = useMemo(() => {
-    if (!q.trim()) return [];
-    return feeds.filter((item) => {
-      if (item.type !== 'project') return false;
-      const title = String(item.title ?? '');
-      const summary = String(item.summary ?? '');
-      const name = String(item.authorName ?? '');
-      return matchQuery(title, q) || matchQuery(summary, q) || matchQuery(name, q);
-    });
-  }, [feeds, q]);
+    setLoading(true);
+    void apiJson<SearchPage>(buildSearchPath(query), { localFirst: false })
+      .then((data) => {
+        if (requestSeq.current !== seq) return;
+        const items = normalizeSearchItems(data.items ?? []);
+        setResults((current) => mergeSearchItems(current, items, 'replace'));
+        setNextCursor(data.nextCursor ?? null);
+        setHasMore(Boolean(data.hasMore));
+      })
+      .catch((err) => {
+        if (requestSeq.current !== seq) return;
+        console.error('Fetch search results error:', err);
+        setResults([]);
+        setNextCursor(null);
+        setHasMore(false);
+      })
+      .finally(() => {
+        if (requestSeq.current === seq) setLoading(false);
+      });
+  }, [debouncedQuery]);
 
-  const hasQuery = q.trim().length > 0;
-  const hasResults =
-    hasQuery &&
-    (filteredUsers.length > 0 || filteredPosts.length > 0 || filteredProjects.length > 0);
-  const totalResults = filteredUsers.length + filteredPosts.length + filteredProjects.length;
+  const loadMore = useCallback(async () => {
+    const query = debouncedQuery.trim();
+    if (!query || loading || loadingMoreRef.current || !hasMore || !nextCursor) return;
+
+    const seq = requestSeq.current;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const data = await apiJson<SearchPage>(buildSearchPath(query, nextCursor), { localFirst: false });
+      if (requestSeq.current !== seq) return;
+      const items = normalizeSearchItems(data.items ?? []);
+      setResults((current) => mergeSearchItems(current, items, 'append'));
+      setNextCursor(data.nextCursor ?? null);
+      setHasMore(Boolean(data.hasMore));
+    } catch (err) {
+      if (requestSeq.current === seq) console.error('Fetch more search results error:', err);
+    } finally {
+      if (requestSeq.current === seq) {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      }
+    }
+  }, [debouncedQuery, hasMore, loading, nextCursor]);
+
+  const loadMoreRef = useInfiniteScroll({
+    disabled: !debouncedQuery.trim(),
+    loading: loading || loadingMore,
+    hasMore,
+    onLoadMore: loadMore,
+  });
+
+  const filteredUsers = useMemo(() => results.filter((item) => item.type === 'user'), [results]);
+  const filteredPosts = useMemo(() => results.filter((item) => item.type === 'post'), [results]);
+  const filteredProjects = useMemo(() => results.filter((item) => item.type === 'project'), [results]);
+
+  const hasQuery = debouncedQuery.trim().length > 0;
+  const hasResults = hasQuery && results.length > 0;
+  const totalResults = results.length;
 
   const submitSearch = (value?: string) => {
     const v = (value ?? inputText).trim();
+    setInputText(v);
+    setDebouncedQuery(v);
+
     if (v) {
       setSearchParams({ q: v });
       const next = [v, ...recentSearches.filter((item) => item.toLowerCase() !== v.toLowerCase())].slice(0, MAX_RECENT_SEARCHES);
@@ -140,7 +263,11 @@ const Search: React.FC = () => {
         placeholder={t('search.placeholder')}
         prefix={<SearchIcon size={18} style={{ color: token.colorTextDescription }} />}
         value={inputText}
-        onChange={(e) => setInputText(e.target.value)}
+        onChange={(e) => {
+          const value = e.target.value;
+          setInputText(value);
+          if (!value.trim() && urlQuery) setSearchParams({});
+        }}
         onSearch={submitSearch}
         style={{ marginBottom: 24 }}
       />
@@ -186,8 +313,8 @@ const Search: React.FC = () => {
                       <List.Item.Meta
                         avatar={<Avatar src={photo} />}
                         title={
-                          <Link to={`/profile/${u.uid}`} style={{ color: token.colorLink }}>
-                            <HighlightText text={u.displayname} query={q} />
+                          <Link to={`/profile/${u.uid ?? u.id}`} style={{ color: token.colorLink }}>
+                            <HighlightText text={u.displayname ?? ''} query={debouncedQuery} />
                           </Link>
                         }
                       />
@@ -211,7 +338,7 @@ const Search: React.FC = () => {
                           {String(item.authorName ?? t('search.userFallback'))} {t('search.postSuffix')}
                         </Link>
                         <Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0, marginTop: 4 }} type="secondary">
-                          <HighlightText text={String(item.content ?? '').slice(0, 200)} query={q} />
+                          <HighlightText text={String(item.content ?? '').slice(0, 200)} query={debouncedQuery} />
                         </Paragraph>
                       </div>
                     </List.Item>
@@ -231,10 +358,10 @@ const Search: React.FC = () => {
                     <List.Item>
                       <div style={{ width: '100%' }}>
                         <Link to={`/project/${item.id}`} style={{ color: token.colorLink, fontWeight: 600 }}>
-                          <HighlightText text={String(item.title ?? t('search.projectFallback'))} query={q} />
+                          <HighlightText text={String(item.title ?? t('search.projectFallback'))} query={debouncedQuery} />
                         </Link>
                         <Text type="secondary" ellipsis style={{ display: 'block', marginTop: 4 }}>
-                          <HighlightText text={String(item.summary ?? '').slice(0, 160)} query={q} />
+                          <HighlightText text={String(item.summary ?? '').slice(0, 160)} query={debouncedQuery} />
                         </Text>
                       </div>
                     </List.Item>
@@ -243,6 +370,10 @@ const Search: React.FC = () => {
               </Card>
             </>
           )}
+
+          <div ref={loadMoreRef} style={{ minHeight: 32, padding: 16, textAlign: 'center' }}>
+            {loadingMore ? <Spin /> : hasMore ? <Text type="secondary">加载更多</Text> : null}
+          </div>
         </div>
       )}
       </motion.div>

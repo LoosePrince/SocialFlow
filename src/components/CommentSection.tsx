@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Button, List, Space, Modal, App, Mentions, Flex, Typography, theme, Avatar, Input, Segmented, Grid } from 'antd';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Button, List, Space, Modal, App, Mentions, Flex, Typography, theme, Avatar, Input, Segmented, Grid, Spin } from 'antd';
 import { GithubCdnAvatar } from './GithubCdnAvatar';
 import LikeList from './LikeList';
 import { useNavigate } from 'react-router-dom';
@@ -16,6 +16,7 @@ import { subscribeAppEvents } from '../lib/appSse';
 import { toMillis } from '../lib/time';
 import { useLoginModal } from '../context/LoginModalContext';
 import { useI18n } from '../context/I18nContext';
+import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -41,6 +42,14 @@ type CommentApiItem = {
   profiles?: { displayname?: string; photourl?: string };
 };
 
+type CommentsPage = {
+  items: CommentApiItem[];
+  nextCursor: string | null;
+  hasMore: boolean;
+};
+
+const COMMENT_PAGE_SIZE = 20;
+
 function normalizeComments(data: CommentApiItem[]) {
   return data.map((c) => ({
     ...c,
@@ -49,11 +58,38 @@ function normalizeComments(data: CommentApiItem[]) {
   }));
 }
 
+function mergeComments(current: any[], incoming: any[], mode: 'replace' | 'prepend' | 'append') {
+  const source =
+    mode === 'replace'
+      ? incoming
+      : mode === 'prepend'
+        ? [...incoming, ...current]
+        : [...current, ...incoming];
+  const seen = new Set<string>();
+  const merged: any[] = [];
+  for (const item of source) {
+    if (!item.id || seen.has(item.id)) continue;
+    seen.add(item.id);
+    merged.push(item);
+  }
+  return merged.sort((a, b) => {
+    const delta = Number(b.createdat) - Number(a.createdat);
+    if (delta !== 0) return delta;
+    return String(b.id ?? '').localeCompare(String(a.id ?? ''));
+  });
+}
+
 const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType, embedded = false }) => {
   const { user, profile, isAdmin } = useAuth();
   const { openLoginModal } = useLoginModal();
   const { token } = theme.useToken();
   const [comments, setComments] = useState<any[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(true);
+  const [commentsLoadingMore, setCommentsLoadingMore] = useState(false);
+  const [commentsHasMore, setCommentsHasMore] = useState(false);
+  const [commentsNextCursor, setCommentsNextCursor] = useState<string | null>(null);
+  const commentsLoadingMoreRef = useRef(false);
+  const commentsLoadedPastFirstRef = useRef(false);
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [replyTo, setReplyTo] = useState<any>(null);
@@ -132,32 +168,88 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType,
     }
   };
 
-  const fetchComments = async () => {
-    const path = `/api/comments?contentId=${encodeURIComponent(contentId)}&contentType=${encodeURIComponent(contentType)}`;
-    try {
-      const data = await apiJson<CommentApiItem[]>(path);
-      setComments(normalizeComments(data));
-    } catch {
-      if (comments.length === 0) setComments([]);
+  const buildCommentsPath = useCallback((cursor?: string | null) => {
+    const params = new URLSearchParams();
+    params.set('contentId', contentId);
+    params.set('contentType', contentType);
+    params.set('limit', String(COMMENT_PAGE_SIZE));
+    if (cursor) params.set('cursor', cursor);
+    return `/api/comments?${params.toString()}`;
+  }, [contentId, contentType]);
+
+  const fetchCommentsPage = useCallback(async (cursor: string | null, mode: 'replace' | 'prepend' | 'append') => {
+    const data = await apiJson<CommentsPage>(buildCommentsPath(cursor), {
+      localFirst: mode !== 'append',
+    });
+    const items = normalizeComments(data.items ?? []);
+    setComments((current) => mergeComments(current, items, mode));
+    if (mode === 'append') {
+      commentsLoadedPastFirstRef.current = true;
+      setCommentsNextCursor(data.nextCursor ?? null);
+      setCommentsHasMore(Boolean(data.hasMore));
+    } else if (mode === 'replace') {
+      commentsLoadedPastFirstRef.current = false;
+      setCommentsNextCursor(data.nextCursor ?? null);
+      setCommentsHasMore(Boolean(data.hasMore));
+    } else if (!commentsLoadedPastFirstRef.current) {
+      setCommentsNextCursor(data.nextCursor ?? null);
+      setCommentsHasMore(Boolean(data.hasMore));
     }
-  };
+    return data;
+  }, [buildCommentsPath]);
+
+  const fetchComments = useCallback(async () => {
+    setCommentsLoading(true);
+    try {
+      await fetchCommentsPage(null, 'replace');
+    } catch {
+      setComments((current) => (current.length === 0 ? [] : current));
+      setCommentsHasMore(false);
+      setCommentsNextCursor(null);
+    } finally {
+      setCommentsLoading(false);
+    }
+  }, [fetchCommentsPage]);
+
+  const loadMoreComments = useCallback(async () => {
+    if (commentsLoading || commentsLoadingMoreRef.current || !commentsHasMore || !commentsNextCursor) return;
+    commentsLoadingMoreRef.current = true;
+    setCommentsLoadingMore(true);
+    try {
+      await fetchCommentsPage(commentsNextCursor, 'append');
+    } finally {
+      commentsLoadingMoreRef.current = false;
+      setCommentsLoadingMore(false);
+    }
+  }, [commentsHasMore, commentsLoading, commentsNextCursor, fetchCommentsPage]);
+
+  const loadMoreCommentsRef = useInfiniteScroll({
+    loading: commentsLoading || commentsLoadingMore,
+    hasMore: commentsHasMore,
+    onLoadMore: loadMoreComments,
+  });
 
   useEffect(() => {
-    const path = `/api/comments?contentId=${encodeURIComponent(contentId)}&contentType=${encodeURIComponent(contentType)}`;
+    const path = buildCommentsPath(null);
     void fetchComments();
-    const unsubCache = onApiCacheUpdate<CommentApiItem[]>(path, (data) => {
-      setComments(normalizeComments(data));
+    const unsubCache = onApiCacheUpdate<CommentsPage>(path, (data) => {
+      setComments((current) => mergeComments(current, normalizeComments(data.items ?? []), 'prepend'));
+      if (!commentsLoadedPastFirstRef.current) {
+        setCommentsNextCursor(data.nextCursor ?? null);
+        setCommentsHasMore(Boolean(data.hasMore));
+      }
+      setCommentsLoading(false);
     });
     const unsub = subscribeAppEvents((data) => {
       if (data.table === 'comments') {
-        void fetchComments();
+        void fetchCommentsPage(null, 'prepend').catch((err) => console.debug('[comments] refresh failed:', err));
       }
     });
     return () => {
       unsubCache();
       unsub();
     };
-  }, [contentId, contentType]);
+  }, [buildCommentsPath, fetchComments, fetchCommentsPage]);
 
   useEffect(() => {
     if (!user) {
@@ -500,6 +592,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType,
       <List
         itemLayout="horizontal"
         dataSource={comments.filter(c => !c.parentid)}
+        loading={commentsLoading && comments.length === 0}
         renderItem={(item) => (
           <List.Item style={{ padding: '16px 0', borderBlockEnd: `1px solid ${token.colorBorderSecondary}` }}>
             <List.Item.Meta
@@ -622,6 +715,9 @@ const CommentSection: React.FC<CommentSectionProps> = ({ contentId, contentType,
           </List.Item>
         )}
       />
+      <div ref={loadMoreCommentsRef} style={{ minHeight: 32, padding: 12, textAlign: 'center' }}>
+        {commentsLoadingMore ? <Spin size="small" /> : commentsHasMore ? <Text type="secondary">加载更多</Text> : null}
+      </div>
     </div>
   );
 };

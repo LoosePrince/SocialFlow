@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useFeeds } from '../hooks/useFeeds';
+import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import PostCard from '../components/PostCard';
 import ProjectCard from '../components/ProjectCard';
-import { Typography, Space, Divider, Empty, Flex, theme, Card, Button, Grid } from 'antd';
+import { Typography, Space, Divider, Empty, Flex, theme, Card, Button, Grid, Spin } from 'antd';
 import { ProfilePageSkeleton } from '../components/PageSkeletons';
 import { GithubCdnAvatar } from '../components/GithubCdnAvatar';
 import { motion } from 'framer-motion';
@@ -26,21 +27,23 @@ const Profile: React.FC = () => {
   const targetUid = uid ?? currentProfile?.id ?? currentUser?.id;
   const isOwnProfile = Boolean(targetUid && (targetUid === currentProfile?.id || targetUid === currentUser?.id));
 
-  const { feeds: userFeeds, loading: feedsLoading } = useFeeds({
-    showAll: true,
-    authorId: targetUid,
-    enabled: Boolean(targetUid),
-  });
   const { token } = theme.useToken();
   const screens = useBreakpoint();
   const { t } = useI18n();
   const [feedFilter, setFeedFilter] = useState<FeedFilterValue>('all');
 
+  const { feeds: userFeeds, loading: feedsLoading, loadingMore, hasMore, loadMore } = useFeeds({
+    showAll: true,
+    authorId: targetUid,
+    type: feedFilter,
+    enabled: Boolean(targetUid),
+  });
+  const loadMoreRef = useInfiniteScroll({
+    loading: feedsLoading || loadingMore,
+    hasMore,
+    onLoadMore: loadMore,
+  });
   const displayProfile = isOwnProfile ? currentProfile : users.find(u => u.uid === targetUid);
-  const visibleFeeds = useMemo(() => {
-    if (feedFilter === 'all') return userFeeds;
-    return userFeeds.filter((item) => item.type === feedFilter);
-  }, [feedFilter, userFeeds]);
 
   const emptyDescription =
     userFeeds.length === 0
@@ -117,20 +120,25 @@ const Profile: React.FC = () => {
           {t('profile.publishedContent')}
         </Title>
         <FeedFilter value={feedFilter} onChange={setFeedFilter} sticky compact />
-        {visibleFeeds.length === 0 ? (
+        {userFeeds.length === 0 ? (
           <div style={{ paddingInline: screens.md ? 0 : 16 }}>
             <ActionEmpty title={emptyDescription} description={t('profile.emptyHint')} />
           </div>
         ) : (
-          visibleFeeds.map(item => (
-            <div key={item.id}>
-               {item.type === 'post' ? (
-                 <PostCard post={item} onLike={() => {}} onComment={() => {}} />
-               ) : (
-                 <ProjectCard project={item} />
-               )}
+          <>
+            {userFeeds.map(item => (
+              <div key={`${item.type}-${item.id}`}>
+                 {item.type === 'post' ? (
+                   <PostCard post={item} onLike={() => {}} onComment={() => {}} />
+                 ) : (
+                   <ProjectCard project={item} />
+                 )}
+              </div>
+            ))}
+            <div ref={loadMoreRef} style={{ minHeight: 32, padding: 16, textAlign: 'center' }}>
+              {loadingMore ? <Spin /> : hasMore ? <Text type="secondary">加载更多</Text> : null}
             </div>
-          ))
+          </>
         )}
       </div>
     </motion.div>

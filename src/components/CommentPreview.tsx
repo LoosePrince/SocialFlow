@@ -12,6 +12,12 @@ interface CommentPreviewProps {
   maxItems?: number;
 }
 
+type CommentsPage<T> = {
+  items: T[];
+  nextCursor: string | null;
+  hasMore: boolean;
+};
+
 const CommentPreview: React.FC<CommentPreviewProps> = ({ contentId, contentType = 'post', maxItems = 5 }) => {
   const [comments, setComments] = useState<Array<{ profiles?: { displayname?: string }; text?: string }>>([]);
   const [selectedComment, setSelectedComment] = useState<{ profiles?: { displayname?: string }; text?: string } | null>(null);
@@ -22,10 +28,11 @@ const CommentPreview: React.FC<CommentPreviewProps> = ({ contentId, contentType 
   useEffect(() => {
     const fetchComments = async () => {
       try {
-        const data = await apiJson<Array<{ profiles?: { displayname?: string }; text?: string }>>(
-          `/api/comments?contentId=${encodeURIComponent(contentId)}&contentType=${encodeURIComponent(contentType)}`
+        const limit = Math.max(0, maxItems);
+        const data = await apiJson<CommentsPage<{ profiles?: { displayname?: string }; text?: string }>>(
+          `/api/comments?contentId=${encodeURIComponent(contentId)}&contentType=${encodeURIComponent(contentType)}&limit=${limit}`
         );
-        setComments(Array.isArray(data) ? data.slice(0, Math.max(0, maxItems)) : []);
+        setComments(Array.isArray(data.items) ? data.items : []);
       } catch {
         setComments([]);
       }
