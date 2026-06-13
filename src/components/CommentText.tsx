@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { useUsers } from '../hooks/useUsers';
+import { useKnownUsers } from '../hooks/useUsers';
 import { theme, Tooltip } from 'antd';
 import { useTwikooOwo } from '../hooks/useTwikooOwo';
 import { parseCommentSegments, type CommentSegment } from '../lib/commentSegments';
@@ -28,7 +28,7 @@ const CommentText: React.FC<CommentTextProps> = ({
   singleLine = false,
   preventOuterClick = false,
 }) => {
-  const { users } = useUsers();
+  const users = useKnownUsers();
   const { token: themeToken } = theme.useToken();
   const { getIcon } = useTwikooOwo();
 

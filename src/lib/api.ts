@@ -4,6 +4,7 @@ import { getApiBase } from '../runtimeConfig';
 const base = () => getApiBase();
 const API_CACHE_PREFIX = 'socialflow.api-cache.v1:';
 const API_CACHE_EVENT = 'socialflow:api-cache-updated';
+const inFlightGetRequests = new Map<string, Promise<unknown>>();
 
 export function apiUrl(path: string): string {
   const p = path.startsWith('/') ? path : `/${path}`;
@@ -173,6 +174,19 @@ async function apiJsonFromNetwork<T>(path: string, init: RequestInit = {}): Prom
   return parseApiResponse<T>(res);
 }
 
+function sharedGetRequest<T>(key: string, request: () => Promise<T>): Promise<T> {
+  const current = inFlightGetRequests.get(key) as Promise<T> | undefined;
+  if (current) return current;
+
+  const next = request().finally(() => {
+    if (inFlightGetRequests.get(key) === next) {
+      inFlightGetRequests.delete(key);
+    }
+  });
+  inFlightGetRequests.set(key, next);
+  return next;
+}
+
 export async function apiJson<T>(path: string, init: ApiJsonInit = {}): Promise<T> {
   const { localFirst = true, ...requestInit } = init;
   const isRead = methodOf(requestInit) === 'GET' && requestInit.body === undefined;
@@ -184,18 +198,26 @@ export async function apiJson<T>(path: string, init: ApiJsonInit = {}): Promise<
   }
 
   const cacheKey = await cacheKeyFor(path);
+  const requestKey = `${cacheKey}:${JSON.stringify({
+    headers: Array.from(new Headers(requestInit.headers).entries()),
+    credentials: requestInit.credentials,
+    mode: requestInit.mode,
+    redirect: requestInit.redirect,
+  })}`;
   const cached = localFirst ? readCache<T>(cacheKey) : null;
+  const fetchFresh = () =>
+    sharedGetRequest<T>(requestKey, async () => {
+      const fresh = await apiJsonFromNetwork<T>(path, { ...requestInit, cache: 'no-store' });
+      writeCache(cacheKey, path, fresh);
+      return fresh;
+    });
 
   if (cached) {
-    void apiJsonFromNetwork<T>(path, { ...requestInit, cache: 'no-store' })
-      .then((fresh) => writeCache(cacheKey, path, fresh))
-      .catch((err) => console.debug('[api] background refresh failed:', err));
+    void fetchFresh().catch((err) => console.debug('[api] background refresh failed:', err));
     return cached.data;
   }
 
-  const fresh = await apiJsonFromNetwork<T>(path, { ...requestInit, cache: 'no-store' });
-  writeCache(cacheKey, path, fresh);
-  return fresh;
+  return fetchFresh();
 }
 
 export type UploadScope = 'post' | 'project' | 'profile';

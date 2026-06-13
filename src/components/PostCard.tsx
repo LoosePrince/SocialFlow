@@ -5,7 +5,6 @@ import SmartFeedImage from './SmartFeedImage';
 import { Heart, MessageCircle, Share2, MoreHorizontal, ShieldCheck, Trash2, Pencil } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
-import LikeList from './LikeList';
 import CommentPreview from './CommentPreview';
 import PostBodyDisplay from './PostBodyDisplay';
 import AttachmentList from './AttachmentList';
@@ -25,7 +24,6 @@ interface PostCardProps {
 }
 
 const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
-  const [likeListNonce, setLikeListNonce] = useState(0);
   const [liked, setLiked] = useState(false);
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
@@ -45,6 +43,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
   const isOwner = user?.id === post.authorid;
   const canManage = isAdmin || isOwner;
   const createdAtMs = toMillis(post.createdat ?? post.createdAt);
+  const commentCount = Number(post.commentcount ?? post.commentCount ?? 0);
 
   const fetchUserLiked = useCallback(async () => {
     if (!user) {
@@ -62,8 +61,12 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
   }, [user?.id, post.id]);
 
   useEffect(() => {
+    if (!user) {
+      setLiked(false);
+      return;
+    }
     fetchUserLiked();
-  }, [fetchUserLiked, likeListNonce]);
+  }, [fetchUserLiked, user]);
 
   const toggleRecommendation = async () => {
     try {
@@ -296,7 +299,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
             }
             onClick={async () => {
               await Promise.resolve(onLike(post.id));
-              setLikeListNonce((n) => n + 1);
+              await fetchUserLiked();
             }}
             style={{ 
               color: liked ? token.colorPrimary : token.colorTextDescription,
@@ -323,7 +326,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
               borderRadius: token.borderRadiusSM,
             }}
           >
-            {(post.commentcount ?? post.commentCount) || 0}
+            {commentCount}
           </Button>
           <Button 
             type="text" 
@@ -332,9 +335,10 @@ const PostCard: React.FC<PostCardProps> = ({ post, onLike, onComment }) => {
             style={{ color: token.colorTextDescription, borderRadius: token.borderRadiusSM }} 
           />
         </Flex>
+        {commentCount > 0 && (
+          <CommentPreview contentId={post.id} contentType="post" maxItems={screens.md ? 5 : 2} />
+        )}
         
-        {screens.md && <LikeList contentId={post.id} contentType="post" refreshNonce={likeListNonce} />}
-        <CommentPreview contentId={post.id} contentType="post" maxItems={screens.md ? 5 : 2} />
       </div>
 
       <Modal
