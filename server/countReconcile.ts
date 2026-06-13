@@ -1,7 +1,7 @@
-import type postgres from 'postgres';
 import { getRuntimeConfigBool, getRuntimeConfigNumber } from './runtimeConfig.js';
+import type { AppSql } from './db.js';
 
-export async function reconcileEngagementCounts(sql: postgres.Sql): Promise<{
+export async function reconcileEngagementCounts(sql: AppSql): Promise<{
   postsUpdated: number;
   projectsUpdated: number;
 }> {
@@ -26,7 +26,7 @@ export async function reconcileEngagementCounts(sql: postgres.Sql): Promise<{
 
 const DEFAULT_INTERVAL_MS = 2 * 60 * 60 * 1000;
 
-let schedulerSql: postgres.Sql | null = null;
+let schedulerSql: AppSql | null = null;
 let schedulerTimer: ReturnType<typeof setTimeout> | null = null;
 let schedulerGeneration = 0;
 let runInFlight: Promise<void> | null = null;
@@ -45,7 +45,7 @@ async function readInterval() {
   return intervalMs;
 }
 
-async function runIfEnabled(sql: postgres.Sql) {
+async function runIfEnabled(sql: AppSql) {
   const skip = await getRuntimeConfigBool('SKIP_COUNT_RECONCILE', false);
   if (skip) {
     console.warn('[scheduler] skipped engagement count reconcile');
@@ -100,7 +100,7 @@ export function refreshCountReconcileScheduler(): void {
   void runNowAndSchedule(generation);
 }
 
-export function startCountReconcileScheduler(sql: postgres.Sql): void {
+export function startCountReconcileScheduler(sql: AppSql): void {
   schedulerSql = sql;
   console.log('[scheduler] dynamic engagement count scheduler started');
   refreshCountReconcileScheduler();

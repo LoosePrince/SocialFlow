@@ -134,7 +134,7 @@ async function insertEnvDefaultIfMissing(key: string): Promise<void> {
   const value = normalizeConfigString(process.env[key] ?? '');
   await sql`
     INSERT INTO site_settings (key, value, updatedat, updatedby)
-    VALUES (${key}, ${JSON.stringify(value)}::jsonb, ${Date.now()}, null)
+    VALUES (${key}, ${JSON.stringify(value)}, ${Date.now()}, null)
     ON CONFLICT (key) DO NOTHING
   `;
 }
@@ -147,7 +147,7 @@ async function getDatabaseConfigMap(keys: readonly string[]): Promise<Map<string
       SELECT key, value, updatedby
       FROM site_settings
       WHERE key = ANY(${sql.array([...keys])})
-    `) as SettingRow[];
+    `) as unknown as SettingRow[];
   } catch (err) {
     const code =
       typeof err === 'object' && err && 'code' in err
@@ -303,11 +303,10 @@ export async function syncEnvConfigDefaultsToDatabase(): Promise<number> {
     for (const [key, value] of entries) {
       const rows = await tx`
         INSERT INTO site_settings (key, value, updatedat, updatedby)
-        VALUES (${key}, ${JSON.stringify(value)}::jsonb, ${Date.now()}, null)
+        VALUES (${key}, ${JSON.stringify(value)}, ${Date.now()}, null)
         ON CONFLICT (key) DO NOTHING
-        RETURNING key
       `;
-      inserted += rows.length;
+      inserted += Number(rows.count ?? 0);
     }
   });
   return inserted;

@@ -2,10 +2,9 @@ import 'dotenv/config';
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
-import type postgres from 'postgres';
 import { cors } from 'hono/cors';
 import { stream } from 'hono/streaming';
-import { closeDatabaseConnections, databaseMaxConnections, sql, listenSql } from './db.js';
+import { closeDatabaseConnections, databaseMaxConnections, databaseProvider, sql, listenSql, type AppSql } from './db.js';
 import { refreshCountReconcileScheduler, startCountReconcileScheduler } from './countReconcile.js';
 import { runDatabaseStartup } from './migrations.js';
 import {
@@ -130,7 +129,7 @@ type FileFolderRow = {
   updatedat: string | number;
 };
 
-type QuerySql = postgres.Sql | postgres.TransactionSql;
+type QuerySql = AppSql;
 
 type SiteSettingRow = {
   key: string;
@@ -476,26 +475,31 @@ let notificationHasFromUserIdColumn: boolean | null = null;
 
 async function hasNotificationFromUserIdColumn() {
   if (notificationHasFromUserIdColumn !== null) return notificationHasFromUserIdColumn;
-  const rows = await sql`
-    SELECT 1
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = 'notifications'
-      AND column_name = 'fromuserid'
-    LIMIT 1
-  `;
+  const rows = databaseProvider === 'lsqlite'
+    ? await sql`
+        SELECT 1
+        FROM pragma_table_info('notifications')
+        WHERE name = 'fromuserid'
+        LIMIT 1
+      `
+    : await sql`
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'notifications'
+          AND column_name = 'fromuserid'
+        LIMIT 1
+      `;
   notificationHasFromUserIdColumn = rows.length > 0;
   return notificationHasFromUserIdColumn;
 }
 
 async function ensureNotificationSettings(userId: string): Promise<NotificationSettingsRow> {
-  const rows = await sql`
+  await sql`
     INSERT INTO notification_settings (userid)
     VALUES (${userId})
     ON CONFLICT (userid) DO NOTHING
-    RETURNING *
   `;
-  if (rows.length > 0) return rows[0] as NotificationSettingsRow;
   const existing = await sql`SELECT * FROM notification_settings WHERE userid = ${userId} LIMIT 1`;
   return existing[0] as NotificationSettingsRow;
 }
@@ -572,7 +576,7 @@ async function emitNotification(params: {
     SELECT endpoint, p256dh, auth
     FROM push_subscriptions
     WHERE userid = ${toUserId}
-  `) as Array<{ endpoint: string; p256dh: string; auth: string }>;
+  `) as unknown as Array<{ endpoint: string; p256dh: string; auth: string }>;
   if (subscriptions.length === 0) return;
 
   const typeTextMap: Record<NotifyType, string> = {
@@ -641,13 +645,13 @@ app.get('/api/me', authMiddleware, async (c) => {
   const role = (await isAdminEmail(email)) ? 'admin' : 'user';
   const createdat = Date.now();
 
-  const createdRows = await sql`
+  await sql`
     INSERT INTO profiles (id, email, displayname, photourl, role, createdat)
     VALUES (${user.sub}, ${email}, ${displayname}, ${photourl}, ${role}, ${createdat})
     ON CONFLICT (id) DO UPDATE SET
       email = EXCLUDED.email
-    RETURNING *
   `;
+  const createdRows = await sql`SELECT * FROM profiles WHERE id = ${user.sub} LIMIT 1`;
   const created = createdRows[0] as ProfileRow;
   return c.json(toPublicProfile(created));
 });
@@ -1000,7 +1004,7 @@ app.patch('/api/notification-settings', authMiddleware, async (c) => {
     updatedat: Date.now(),
   };
 
-  const rows = await sql`
+  await sql`
     UPDATE notification_settings
     SET
       receive_recommend = ${next.receive_recommend},
@@ -1017,8 +1021,8 @@ app.patch('/api/notification-settings', authMiddleware, async (c) => {
       alert_mention = ${next.alert_mention},
       updatedat = ${next.updatedat}
     WHERE userid = ${user.sub}
-    RETURNING *
   `;
+  const rows = await sql`SELECT * FROM notification_settings WHERE userid = ${user.sub} LIMIT 1`;
   return c.json(rows[0] as NotificationSettingsRow);
 });
 
@@ -1190,26 +1194,27 @@ app.patch('/api/admin/users/:id', authMiddleware, adminMiddleware, async (c) => 
     if (takenRows.length > 0) return c.json({ error: 'QQ uin already bound' }, 409);
   }
 
-  const rows = body.clearPassword
-    ? await sql`
-        UPDATE profiles
-        SET displayname = ${displayname},
-            photourl = ${photourl},
-            role = ${nextRole},
-            qq_uin = ${qqUin},
-            passwordhash = null
-        WHERE id = ${id}
-        RETURNING *
-      `
-    : await sql`
-        UPDATE profiles
-        SET displayname = ${displayname},
-            photourl = ${photourl},
-            role = ${nextRole},
-            qq_uin = ${qqUin}
-        WHERE id = ${id}
-        RETURNING *
-      `;
+  if (body.clearPassword) {
+    await sql`
+      UPDATE profiles
+      SET displayname = ${displayname},
+          photourl = ${photourl},
+          role = ${nextRole},
+          qq_uin = ${qqUin},
+          passwordhash = null
+      WHERE id = ${id}
+    `;
+  } else {
+    await sql`
+      UPDATE profiles
+      SET displayname = ${displayname},
+          photourl = ${photourl},
+          role = ${nextRole},
+          qq_uin = ${qqUin}
+      WHERE id = ${id}
+    `;
+  }
+  const rows = await sql`SELECT * FROM profiles WHERE id = ${id} LIMIT 1`;
 
   return c.json(toPublicProfile(rows[0] as ProfileRow));
 });
@@ -1344,12 +1349,14 @@ app.delete('/api/admin/comments/:id', authMiddleware, adminMiddleware, async (c)
   if (!id) return c.json({ error: 'Bad request' }, 400);
 
   const rows = await sql`
-    DELETE FROM comments
+    SELECT contentid, contenttype
+    FROM comments
     WHERE id = ${id}
-    RETURNING contentid, contenttype
+    LIMIT 1
   `;
   const deleted = rows[0] as { contentid?: string; contenttype?: 'post' | 'project' } | undefined;
   if (!deleted?.contentid || !deleted.contenttype) return c.json({ error: 'Not found' }, 404);
+  await sql`DELETE FROM comments WHERE id = ${id}`;
 
   if (deleted.contenttype === 'post') {
     await sql`
@@ -1397,14 +1404,19 @@ app.put('/api/admin/settings/:key', authMiddleware, adminMiddleware, async (c) =
   }
   const normalizedValue = normalizeRuntimeConfigValue(body.value);
 
-  const [row] = await sql`
+  await sql`
     INSERT INTO site_settings (key, value, updatedat, updatedby)
     VALUES (${key}, ${JSON.stringify(normalizedValue)}::jsonb, ${Date.now()}, ${user.sub})
     ON CONFLICT (key) DO UPDATE SET
       value = EXCLUDED.value,
       updatedat = EXCLUDED.updatedat,
       updatedby = EXCLUDED.updatedby
-    RETURNING key, value, updatedat, updatedby
+  `;
+  const [row] = await sql`
+    SELECT key, value, updatedat, updatedby
+    FROM site_settings
+    WHERE key = ${key}
+    LIMIT 1
   `;
   if (schedulerSettingKeys.has(key)) {
     refreshCountReconcileScheduler();
@@ -1576,11 +1588,12 @@ app.post('/api/files/folders', authMiddleware, async (c) => {
     return c.json({ error: msg }, msg.includes('forbidden') ? 403 : 400);
   }
   const now = Date.now();
-  const [row] = await sql`
+  const id = crypto.randomUUID();
+  await sql`
     INSERT INTO file_folders (id, ownerid, parentid, name, createdat, updatedat)
-    VALUES (${crypto.randomUUID()}, ${user.sub}, ${parentid}, ${name}, ${now}, ${now})
-    RETURNING *
+    VALUES (${id}, ${user.sub}, ${parentid}, ${name}, ${now}, ${now})
   `;
+  const [row] = await sql`SELECT * FROM file_folders WHERE id = ${id} LIMIT 1`;
   return c.json(toFileFolder(row as FileFolderRow));
 });
 
@@ -1605,12 +1618,12 @@ app.patch('/api/files/folders/:id', authMiddleware, async (c) => {
     return c.json({ error: msg }, msg.includes('forbidden') ? 403 : 400);
   }
 
-  const [row] = await sql`
+  await sql`
     UPDATE file_folders
     SET name = ${nextName}, parentid = ${nextParent}, updatedat = ${Date.now()}
     WHERE id = ${id}
-    RETURNING *
   `;
+  const [row] = await sql`SELECT * FROM file_folders WHERE id = ${id} LIMIT 1`;
   return c.json(toFileFolder(row as FileFolderRow));
 });
 
@@ -1684,12 +1697,12 @@ app.patch('/api/files/:id', authMiddleware, async (c) => {
     return c.json({ error: msg }, msg.includes('forbidden') ? 403 : 400);
   }
 
-  const [row] = await sql`
+  await sql`
     UPDATE file_assets
     SET name = ${nextName}, folderid = ${nextFolder}, updatedat = ${Date.now()}
     WHERE id = ${id}
-    RETURNING *
   `;
+  const [row] = await sql`SELECT * FROM file_assets WHERE id = ${id} LIMIT 1`;
   return c.json(toFileAsset(row as FileAssetRow));
 });
 
@@ -2579,10 +2592,11 @@ app.post('/api/files/upload', authMiddleware, async (c) => {
     const result = await uploadBufferToGithubWithMeta(buf, 'file', user.sub, name, mime);
     const now = Date.now();
     const ext = normalizeExtFromName(name || result.path);
-    const [row] = await sql`
+    const assetId = crypto.randomUUID();
+    await sql`
       INSERT INTO file_assets (id, ownerid, folderid, path, url, name, mime, size, ext, kind, checksum, createdat, updatedat)
       VALUES (
-        ${crypto.randomUUID()},
+        ${assetId},
         ${user.sub},
         ${folderid},
         ${result.path},
@@ -2605,7 +2619,11 @@ app.post('/api/files/upload', authMiddleware, async (c) => {
         kind = EXCLUDED.kind,
         checksum = EXCLUDED.checksum,
         updatedat = EXCLUDED.updatedat
-      RETURNING *
+    `;
+    const [row] = await sql`
+      SELECT * FROM file_assets
+      WHERE ownerid = ${user.sub} AND path = ${result.path}
+      LIMIT 1
     `;
     return c.json(toFileAsset(row as FileAssetRow));
   } catch (e) {
@@ -2641,6 +2659,10 @@ app.get('/api/events', authMiddleware, async (c) => {
 });
 
 async function startListen() {
+  if (databaseProvider === 'lsqlite') {
+    console.log('[server] Lsqlite 不支持 PostgreSQL LISTEN，已跳过 app_events 监听');
+    return;
+  }
   try {
     await listenSql.listen('app_events', (payload) => {
       try {
@@ -2671,7 +2693,8 @@ if (syncedConfigCount > 0) {
 
 const server = serve({ fetch: app.fetch, port: PORT }, (info) => {
   console.log(`[server] http://localhost:${info.port}`);
-  console.log(`[db] connection pool max: ${databaseMaxConnections} (+1 LISTEN)`);
+  console.log(`[db] connection provider: ${databaseProvider}`);
+  console.log(`[db] connection pool max: ${databaseMaxConnections}${databaseProvider === 'postgres' ? ' (+1 LISTEN)' : ''}`);
   void startListen();
   startCountReconcileScheduler(sql);
 });
